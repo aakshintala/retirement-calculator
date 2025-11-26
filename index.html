@@ -85,7 +85,7 @@
     }
     .form-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       gap: 0.75rem 1rem;
     }
     label {
@@ -157,8 +157,10 @@
       display: flex;
       flex-direction: column;
       font-size: 0.85rem;
+      min-width: 0;
     }
     input[type="number"],
+    input[type="text"],
     textarea,
     select {
       border-radius: 0.5rem;
@@ -167,13 +169,31 @@
       font-size: 0.85rem;
       outline: none;
       background: #f9fafb;
+      color: #111827;
+      -webkit-text-fill-color: #111827;
+    }
+    input[type="number"]::placeholder,
+    input[type="text"]::placeholder,
+    textarea::placeholder {
+      color: #9ca3af;
+      -webkit-text-fill-color: #9ca3af;
+      opacity: 1;
+    }
+    input[type="number"]:-webkit-autofill,
+    input[type="text"]:-webkit-autofill,
+    textarea:-webkit-autofill {
+      -webkit-text-fill-color: #111827 !important;
+      color: #111827 !important;
     }
     input[type="number"]:focus,
+    input[type="text"]:focus,
     textarea:focus,
     select:focus {
       border-color: #6366f1;
       box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
       background: #ffffff;
+      color: #111827;
+      -webkit-text-fill-color: #111827;
     }
     textarea {
       resize: vertical;
@@ -183,11 +203,19 @@
       display: flex;
       align-items: center;
       gap: 0.25rem;
+      min-width: 0;
+    }
+    .inline-unit input {
+      flex: 1;
+      min-width: 0;
     }
     .inline-unit span {
       font-size: 0.8rem;
       color: #6b7280;
       white-space: nowrap;
+    }
+    .inline-unit input + span {
+      margin-left: 0.25rem;
     }
     .button-row {
       margin-top: 0.75rem;
@@ -2527,9 +2555,27 @@
 
   function formatCurrencyInput(el) {
     if (!el) return;
-    const num = parseCurrencyValue(el.value);
-    if (!Number.isFinite(num)) return;
-    el.value = num === 0 ? "" : num.toLocaleString();
+    const currentValue = el.value.trim();
+    if (currentValue === "") return;
+    
+    // Check if already formatted (contains comma)
+    const hasComma = currentValue.includes(',');
+    const num = parseCurrencyValue(currentValue);
+    
+    if (!Number.isFinite(num)) {
+      el.value = "";
+      return;
+    }
+    if (num === 0) {
+      el.value = "";
+      return;
+    }
+    
+    // Only reformat if not already formatted or if formatting would change it
+    const formatted = num.toLocaleString('en-US');
+    if (!hasComma || formatted !== currentValue) {
+      el.value = formatted;
+    }
   }
 
   function setupCurrencyInput(el) {
@@ -2673,6 +2719,8 @@
     updateIncomeStreamFields();
     updateBucketFieldState();
     setGoalRows([]);
+    // Reformat currency inputs after setting values
+    wireAllCurrencyInputs();
   }
 
   function runSimulation() {
