@@ -1,0 +1,2790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Retirement & Monte Carlo Calculator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f3f4f6;
+      color: #111827;
+    }
+    .page {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+    h1 {
+      margin: 0 0 0.25rem 0;
+      font-size: 1.6rem;
+    }
+    .subtitle {
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+      color: #4b5563;
+    }
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .tab-button {
+      border: 1px solid #d1d5db;
+      background: #f9fafb;
+      border-radius: 9999px;
+      padding: 0.3rem 0.9rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #374151;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, border 0.2s ease;
+    }
+    .tab-button.active {
+      background: #4338ca;
+      border-color: #4338ca;
+      color: #ffffff;
+      box-shadow: 0 6px 18px rgba(67, 56, 202, 0.2);
+    }
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.1fr);
+      gap: 1.75rem;
+    }
+    @media (max-width: 900px) {
+      .grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      padding: 1rem 1.25rem;
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+      border: 1px solid #e5e7eb;
+    }
+    .section-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 0.4rem;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.75rem 1rem;
+    }
+    label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      display: block;
+      margin-bottom: 0.15rem;
+      color: #374151;
+    }
+    .help-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 1.1rem;
+      height: 1.1rem;
+      border-radius: 9999px;
+      background: #e0e7ff;
+      color: #312e81;
+      font-weight: 700;
+      font-size: 0.7rem;
+      margin-left: 0.35rem;
+      cursor: help;
+      position: relative;
+    }
+    .help-icon::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      bottom: 130%;
+      left: 50%;
+      transform: translateX(-50%) translateY(10%);
+      background: #111827;
+      color: #f9fafb;
+      padding: 0.35rem 0.5rem;
+      border-radius: 0.35rem;
+      font-size: 0.7rem;
+      line-height: 1.2;
+      width: 200px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s ease, transform 0.15s ease;
+      z-index: 10;
+    }
+    .help-icon::before {
+      content: "";
+      position: absolute;
+      bottom: 110%;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 5px;
+      border-style: solid;
+      border-color: #111827 transparent transparent transparent;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .help-icon:hover::after,
+    .help-icon:focus::after {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .help-icon:hover::before,
+    .help-icon:focus::before {
+      opacity: 1;
+    }
+    .help-icon:focus-visible {
+      outline: 2px solid #6366f1;
+      outline-offset: 2px;
+    }
+    .field {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.85rem;
+    }
+    input[type="number"],
+    textarea,
+    select {
+      border-radius: 0.5rem;
+      border: 1px solid #d1d5db;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.85rem;
+      outline: none;
+      background: #f9fafb;
+    }
+    input[type="number"]:focus,
+    textarea:focus,
+    select:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 1px rgba(99, 102, 241, 0.25);
+      background: #ffffff;
+    }
+    textarea {
+      resize: vertical;
+      min-height: 70px;
+    }
+    .inline-unit {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .inline-unit span {
+      font-size: 0.8rem;
+      color: #6b7280;
+      white-space: nowrap;
+    }
+    .button-row {
+      margin-top: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    button {
+      border-radius: 9999px;
+      border: none;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #4f46e5;
+      color: #ffffff;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      box-shadow: 0 8px 15px rgba(79, 70, 229, 0.25);
+    }
+    button:hover {
+      background: #4338ca;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+      box-shadow: none;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.75rem;
+      background: #eef2ff;
+      color: #3730a3;
+      border-radius: 9999px;
+      padding: 0.15rem 0.6rem;
+    }
+    .summary-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.85rem;
+    }
+    .summary-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.25rem 0;
+      border-bottom: 1px dashed #e5e7eb;
+    }
+    .summary-label {
+      color: #4b5563;
+    }
+    .summary-value {
+      font-weight: 600;
+      color: #111827;
+    }
+    .badge {
+      font-size: 0.7rem;
+      display: inline-flex;
+      align-items: center;
+      padding: 0.12rem 0.5rem;
+      border-radius: 9999px;
+      background: #ecfdf5;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+      margin-left: 0.35rem;
+    }
+    .warn {
+      background: #fef2f2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+    .small {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 0.4rem;
+    }
+    canvas {
+      max-height: 460px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+    .inflation-table tbody tr {
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .inflation-table tbody tr:hover {
+      background: #e0e7ff;
+    }
+    thead {
+      background: #eef2ff;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    th,
+    td {
+      padding: 0.45rem 0.6rem;
+      text-align: right;
+      border-bottom: 1px solid #e5e7eb;
+      white-space: nowrap;
+    }
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
+    tbody tr:nth-child(odd) {
+      background: #f9fafb;
+    }
+    .results-table {
+      min-width: 720px;
+    }
+    .mini-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .inline-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      color: #4b5563;
+      margin-top: 0.3rem;
+    }
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      flex-wrap: wrap;
+    }
+    input[type="range"] {
+      flex: 1;
+    }
+    .range-output {
+      font-weight: 600;
+      color: #4338ca;
+      min-width: 3rem;
+    }
+    .table-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 0.75rem;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: #4338ca;
+      border: 1px solid #c7d2fe;
+      box-shadow: none;
+    }
+    .stress-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .stress-card {
+      border: 1px solid #e5e7eb;
+      border-radius: 0.6rem;
+      padding: 0.75rem;
+      background: #f9fafb;
+    }
+    .scenario-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      margin-top: 0.8rem;
+    }
+    .scenario-pill {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.4rem 0.7rem;
+      border: 1px dashed #cbd5f5;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      background: #f8fafc;
+    }
+    .scenario-pill button {
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      box-shadow: none;
+    }
+    .stream-disabled {
+      opacity: 0.5;
+    }
+    .goal-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .goal-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)) auto;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .goal-row button {
+      background: #fee2e2;
+      color: #b91c1c;
+      box-shadow: none;
+      padding: 0.3rem 0.6rem;
+    }
+    .col-hidden {
+      display: none !important;
+    }
+    @media (max-width: 700px) {
+      .goal-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .goal-row button {
+        width: fit-content;
+        justify-self: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <h1>Retirement & Monte Carlo Calculator</h1>
+  <div class="subtitle">
+    Deterministic retirement projection + Monte Carlo with embedded S&P 500–like historical returns (SPY 1928–2025).
+  </div>
+
+  <div class="tabs">
+    <button class="tab-button active" data-tab="overview">Overview</button>
+    <button class="tab-button" data-tab="advanced">Advanced Planner</button>
+    <button class="tab-button" data-tab="stress">Stress Tests</button>
+    <button class="tab-button" data-tab="scenarios">Scenario Manager</button>
+  </div>
+
+  <div class="tab-panel active" data-tab="overview">
+  <div class="grid">
+    <!-- Left: Inputs -->
+    <div class="card">
+      <div class="section-title">Retirement Inputs</div>
+      <div class="form-grid">
+        <div class="field">
+            <label for="currentAge">
+              Current age
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Enter your current age in whole years (18–90)"
+                data-tooltip="Enter your current age in whole years (18–90)"
+              >?</span>
+            </label>
+          <input id="currentAge" type="number" value="35" min="18" max="90" />
+        </div>
+        <div class="field">
+            <label for="retireAge">
+              Retirement age
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Age when you plan to stop working and start withdrawals"
+                data-tooltip="Age when you plan to stop working and start withdrawals"
+              >?</span>
+            </label>
+          <input id="retireAge" type="number" value="55" min="30" max="90" />
+        </div>
+        <div class="field">
+            <label for="endAge">
+              Plan until age
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="How long the projection should run (longevity age)"
+                data-tooltip="How long the projection should run (longevity age)"
+              >?</span>
+            </label>
+          <input id="endAge" type="number" value="100" min="60" max="110" />
+        </div>
+        <div class="field">
+            <label for="currentSavings">
+              Current savings
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Total investable assets available today across all accounts"
+                data-tooltip="Total investable assets available today across all accounts"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <span>$</span>
+            <input
+              id="currentSavings"
+              type="text"
+              inputmode="decimal"
+              class="currency-input"
+              value="1,000,000"
+            />
+          </div>
+        </div>
+        <div class="field">
+            <label for="annualContrib">
+              Annual contribution (until retirement)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Amount you expect to contribute each year until retirement"
+                data-tooltip="Amount you expect to contribute each year until retirement"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <span>$</span>
+            <input
+              id="annualContrib"
+              type="text"
+              inputmode="decimal"
+              class="currency-input"
+              value="200,000"
+            />
+          </div>
+        </div>
+        <div class="field">
+            <label for="incomeNeed">
+              Desired annual income <span style="font-weight:400">(today's $)</span>
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Desired annual spending in today's dollars once retired"
+                data-tooltip="Desired annual spending in today's dollars once retired"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <span>$</span>
+            <input
+              id="incomeNeed"
+              type="text"
+              inputmode="decimal"
+              class="currency-input"
+              value="250,000"
+            />
+          </div>
+        </div>
+        <div class="field">
+            <label for="inflation">
+              Inflation
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Expected long-run inflation rate used to grow future withdrawals"
+                data-tooltip="Expected long-run inflation rate used to grow future withdrawals"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="inflation" type="number" value="3" step="0.1" />
+            <span>% / yr</span>
+          </div>
+        </div>
+        <div class="field">
+            <label for="preRetReturn">
+              Investment return (pre-retirement)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Annual investment return assumption before retirement (nominal %)"
+                data-tooltip="Annual investment return assumption before retirement (nominal %)"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="preRetReturn" type="number" value="10" step="0.1" />
+            <span>% / yr</span>
+          </div>
+        </div>
+        <div class="field">
+            <label for="postRetReturn">
+              Investment return (post-retirement)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Annual investment return assumption after retirement (nominal %)"
+                data-tooltip="Annual investment return assumption after retirement (nominal %)"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="postRetReturn" type="number" value="10" step="0.1" />
+            <span>% / yr</span>
+          </div>
+        </div>
+        <div class="field">
+            <label for="taxRate">
+              Effective tax on withdrawals
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Effective tax percentage applied to withdrawals"
+                data-tooltip="Effective tax percentage applied to withdrawals"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="taxRate" type="number" value="28" step="1" />
+            <span>%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top:1.25rem;">Monte Carlo Settings</div>
+      <div class="form-grid">
+        <div class="field">
+            <label for="numSims">
+              Number of simulations
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="How many Monte Carlo runs to simulate (higher = smoother but slower)"
+                data-tooltip="How many Monte Carlo runs to simulate (higher = smoother but slower)"
+              >?</span>
+            </label>
+          <input id="numSims" type="number" value="10000" min="100" max="20000" step="100" />
+        </div>
+        <div class="field">
+            <label for="mcMode">
+              Return source
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Choose between sampling historical returns or a normal distribution"
+                data-tooltip="Choose between sampling historical returns or a normal distribution"
+              >?</span>
+            </label>
+          <select id="mcMode">
+              <option value="historical">Historical bootstrap (SPY 1928–2025)</option>
+            <option value="normal">Normal dist (mean &amp; stdev)</option>
+          </select>
+        </div>
+        <div class="field">
+            <label for="inflationMode">
+              Inflation source (MC only)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
+                data-tooltip="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
+              >?</span>
+            </label>
+          <select id="inflationMode">
+              <option value="fixed" selected>Use fixed inflation assumption</option>
+            <option value="historical">Historical CPI (paired with returns)</option>
+          </select>
+        </div>
+          <div class="field mc-normal-field">
+            <label for="mcMean">
+              MC mean (if normal)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Average annual return used when normal distribution mode is selected"
+                data-tooltip="Average annual return used when normal distribution mode is selected"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="mcMean" type="number" value="9" step="0.1" />
+            <span>%</span>
+          </div>
+        </div>
+          <div class="field mc-normal-field">
+            <label for="mcStdev">
+              MC stdev (if normal)
+              <span
+                class="help-icon"
+                tabindex="0"
+                aria-label="Annual volatility (standard deviation) used in normal mode"
+                data-tooltip="Annual volatility (standard deviation) used in normal mode"
+              >?</span>
+            </label>
+          <div class="inline-unit">
+            <input id="mcStdev" type="number" value="15" step="0.1" />
+            <span>%</span>
+          </div>
+        </div>
+      </div>
+      <div class="small">
+          Historical mode picks a random start year and walks forward sequentially through the embedded SPY annual returns (1928–2025), looping as needed.
+      </div>
+
+        <div class="section-title" style="margin-top:1.25rem;">Additional Income Streams</div>
+        <div class="mini-grid">
+          <div class="field">
+            <label class="inline-checkbox">
+              <input id="ssEnabled" type="checkbox" class="stream-toggle" />
+              Apply Social Security
+            </label>
+          </div>
+          <div class="field" data-stream-group="ss">
+            <label for="ssStartAge">Social Security start age</label>
+            <input id="ssStartAge" type="number" value="67" min="50" max="80" />
+          </div>
+          <div class="field" data-stream-group="ss">
+            <label for="ssAmount">Social Security annual amount</label>
+            <div class="inline-unit">
+              <span>$</span>
+              <input
+                id="ssAmount"
+                type="text"
+                inputmode="decimal"
+                class="currency-input"
+                value="40,000"
+              />
+            </div>
+            <label class="inline-checkbox">
+              <input id="ssCola" type="checkbox" />
+              COLA with inflation
+            </label>
+          </div>
+        </div>
+        <div class="small">
+          Check the box to include Social Security in the plan. Payments are treated as after-tax income and inflate if COLA is checked.
+      </div>
+
+      <div class="button-row">
+        <button id="runBtn">▶ Run Projection & Monte Carlo</button>
+        <button class="secondary" id="resetBtn">Reset to defaults</button>
+        <span class="pill">Self-contained • No external APIs</span>
+      </div>
+    </div>
+
+    <!-- Right: Summary -->
+    <div class="card">
+      <div class="section-title">Results Summary</div>
+      <ul class="summary-list" id="summaryList">
+        <!-- Filled by JS -->
+      </ul>
+      <div class="small" id="summaryNote"></div>
+      <div class="small" id="savingsSuggestionNote">
+        Run the projection once to see how much extra annual savings would target a high success probability.
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="card" style="margin-top:1.5rem;">
+    <div class="section-title">
+      Portfolio Projection
+      <span class="badge">Deterministic vs Monte Carlo</span>
+    </div>
+    <canvas id="chart"></canvas>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="section-title">
+        Inflation-Adjusted Income Need
+        <span class="badge">After-tax dollars</span>
+      </div>
+      <canvas id="incomeChart"></canvas>
+    </div>
+
+    <div class="card" style="margin-top:1.5rem;">
+      <div class="section-title">Detailed Results</div>
+      <div class="table-wrap">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Age</th>
+              <th>Deterministic Balance</th>
+              <th>MC 10th %ile</th>
+              <th>MC 50th %ile</th>
+              <th>MC 90th %ile</th>
+              <th>Income Need</th>
+            <th data-col="otherIncome">Other Income</th>
+            <th data-col="netNeed">Net Need</th>
+              <th>Income Coverage (MC)</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTableBody">
+            <!-- populated by JS -->
+          </tbody>
+        </table>
+      </div>
+      <div class="table-actions">
+        <button class="btn-ghost" id="downloadCsvBtn">⬇ Download table as CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab="advanced">
+    <div class="card">
+      <div class="section-title">Goal Planner</div>
+      <div id="goalList" class="goal-list"></div>
+      <div class="button-row">
+        <button type="button" class="secondary" id="addGoalBtn">➕ Add goal</button>
+      </div>
+      <div class="small">
+        Each goal withdraws a lump sum (today’s dollars) at the chosen age, inflated using your inflation assumption.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Tax Buckets & Spending Strategy</div>
+      <label class="inline-checkbox" style="margin-bottom:0.6rem;">
+        <input id="bucketsEnabled" type="checkbox" />
+        Enable bucket modeling & guardrails
+      </label>
+      <div class="mini-grid">
+        <div class="field" data-bucket-field>
+          <label for="taxableShare">Taxable bucket %</label>
+          <input id="taxableShare" type="number" value="40" min="0" max="100" />
+        </div>
+        <div class="field" data-bucket-field>
+          <label for="taxDeferredShare">Tax-deferred bucket %</label>
+          <input id="taxDeferredShare" type="number" value="40" min="0" max="100" />
+        </div>
+        <div class="field" data-bucket-field>
+          <label for="rothShare">Roth bucket %</label>
+          <input id="rothShare" type="number" value="20" min="0" max="100" />
+        </div>
+        <div class="field" data-bucket-field>
+          <label for="spendingStrategy">Withdrawal strategy</label>
+          <select id="spendingStrategy">
+            <option value="fixed">Fixed real (default)</option>
+            <option value="guardrail">Guardrail (±10% band)</option>
+          </select>
+        </div>
+      </div>
+      <div class="small">
+        When enabled, buckets split contributions and balances (taxable → tax-deferred → Roth) and let you test withdrawal guardrails.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Sensitivity Analysis</div>
+      <div class="range-row">
+        <label for="returnShift" style="min-width:150px;">Return shift</label>
+        <input id="returnShift" type="range" min="-3" max="3" step="0.25" value="0" />
+        <span class="range-output" id="returnShiftValue">0.00%</span>
+      </div>
+      <div class="range-row" style="margin-top:0.75rem;">
+        <label for="inflationShift" style="min-width:150px;">Inflation shift</label>
+        <input id="inflationShift" type="range" min="-2" max="2" step="0.25" value="0" />
+        <span class="range-output" id="inflationShiftValue">0.00%</span>
+      </div>
+      <div class="small">
+        Shifts apply to both deterministic and Monte Carlo runs (pre/post retirement returns and MC normal mean). Inflation shift adjusts both spending and income COLAs.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Historical Inflation (CPI-U)</div>
+      <p style="font-size:0.85rem; color:#4b5563;">
+        Use the embedded 1914–2024 annual averages to sanity-check or quickly set your inflation assumption.
+        Pick a preset average or click any year to auto-fill the main inflation field.
+      </p>
+      <div class="mini-grid">
+        <div class="field">
+          <label for="inflationPreset">Preset averages</label>
+          <select id="inflationPreset">
+            <option value="custom">Manual (default)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="inflationYearSelect">Jump to year</label>
+          <select id="inflationYearSelect">
+            <option value="">Select a year</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap" style="max-height:240px; margin-top:0.75rem;">
+        <table class="results-table inflation-table">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Year</th>
+              <th>Avg inflation</th>
+            </tr>
+          </thead>
+          <tbody id="inflationTableBody">
+            <!-- populated via JS -->
+          </tbody>
+        </table>
+      </div>
+      <div class="small" id="inflationSelectionNote">
+        Data source: BLS CPI-U annual averages. Click a row to apply that year's average as your assumption.
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab="stress">
+    <div class="card">
+      <div class="section-title">Stress Tests</div>
+      <p style="font-size:0.9rem; color:#4b5563;">
+        Replay infamous market decades to see how your plan fares when history rhymes. Each test grafts the listed return path onto your plan starting <em>today</em> and marches forward year by year (contributions continue until your retirement age, then withdrawals begin). It does not assume those years happen at retirement; it answers “what if the next decade looked like 2000–2009?”
+      </p>
+      <div class="stress-grid">
+        <div class="stress-card">
+          <strong>Stagflation 1973–1982</strong>
+          <p style="font-size:0.8rem; color:#4b5563;">Oil shocks + high inflation decade.</p>
+          <button class="secondary" data-stress="stagflation">Run sequence</button>
+        </div>
+        <div class="stress-card">
+          <strong>Dot-com bust 2000–2009</strong>
+          <p style="font-size:0.8rem; color:#4b5563;">Twin bear markets early 2000s.</p>
+          <button class="secondary" data-stress="dotcom">Run sequence</button>
+        </div>
+        <div class="stress-card">
+          <strong>GFC 2007–2013</strong>
+          <p style="font-size:0.8rem; color:#4b5563;">Housing crash and slow recovery.</p>
+          <button class="secondary" data-stress="gfc">Run sequence</button>
+        </div>
+      </div>
+      <div id="stressResults" class="small">
+        Run a scenario to see the balance path and success notes here.
+      </div>
+      <div class="table-wrap" id="stressTableWrap" style="display:none; margin-top:0.75rem;">
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>Age</th>
+              <th>Balance</th>
+              <th>Income Need</th>
+              <th>Other Income</th>
+              <th>Net Need</th>
+              <th>Coverage?</th>
+            </tr>
+          </thead>
+          <tbody id="stressTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab="scenarios">
+    <div class="card">
+      <div class="section-title">Scenario Manager</div>
+      <div class="mini-grid">
+        <div class="field">
+          <label for="scenarioName">Scenario name</label>
+          <input id="scenarioName" type="text" placeholder="e.g., Early retirement 50" />
+        </div>
+      </div>
+      <div class="button-row">
+        <button id="saveScenarioBtn">💾 Save current inputs</button>
+        <button class="secondary" id="loadScenarioBtn">📥 Load selected</button>
+        <button class="secondary" id="deleteScenarioBtn">🗑 Delete selected</button>
+      </div>
+      <div class="scenario-list" id="scenarioList">
+        <div class="small">No saved scenarios yet.</div>
+      </div>
+      <div class="small" style="margin-top:0.75rem;">
+        Scenarios store every input on this page (including advanced settings) in your browser’s local storage. Great for baseline vs. stretch vs. conservative comparisons.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const HISTORICAL_RETURNS_SPY = [
+    { year: 1928, r: 0.3788 },
+    { year: 1929, r: -0.1191 },
+    { year: 1930, r: -0.2848 },
+    { year: 1931, r: -0.4707 },
+    { year: 1932, r: -0.1515 },
+    { year: 1933, r: 0.4659 },
+    { year: 1934, r: -0.0594 },
+    { year: 1935, r: 0.4137 },
+    { year: 1936, r: 0.2792 },
+    { year: 1937, r: -0.3859 },
+    { year: 1938, r: 0.2521 },
+    { year: 1939, r: -0.0545 },
+    { year: 1940, r: -0.1529 },
+    { year: 1941, r: -0.1786 },
+    { year: 1942, r: 0.1243 },
+    { year: 1943, r: 0.1945 },
+    { year: 1944, r: 0.1380 },
+    { year: 1945, r: 0.3072 },
+    { year: 1946, r: -0.1187 },
+    { year: 1947, r: 0.0000 },
+    { year: 1948, r: -0.0065 },
+    { year: 1949, r: 0.1026 },
+    { year: 1950, r: 0.2178 },
+    { year: 1951, r: 0.1646 },
+    { year: 1952, r: 0.1178 },
+    { year: 1953, r: -0.0662 },
+    { year: 1954, r: 0.4502 },
+    { year: 1955, r: 0.2640 },
+    { year: 1956, r: 0.0262 },
+    { year: 1957, r: -0.1431 },
+    { year: 1958, r: 0.3806 },
+    { year: 1959, r: 0.0848 },
+    { year: 1960, r: -0.0297 },
+    { year: 1961, r: 0.2313 },
+    { year: 1962, r: -0.1181 },
+    { year: 1963, r: 0.1889 },
+    { year: 1964, r: 0.1297 },
+    { year: 1965, r: 0.0906 },
+    { year: 1966, r: -0.1309 },
+    { year: 1967, r: 0.2009 },
+    { year: 1968, r: 0.0766 },
+    { year: 1969, r: -0.1136 },
+    { year: 1970, r: 0.0010 },
+    { year: 1971, r: 0.1079 },
+    { year: 1972, r: 0.1563 },
+    { year: 1973, r: -0.1737 },
+    { year: 1974, r: -0.2972 },
+    { year: 1975, r: 0.3155 },
+    { year: 1976, r: 0.1915 },
+    { year: 1977, r: -0.1150 },
+    { year: 1978, r: 0.0106 },
+    { year: 1979, r: 0.1231 },
+    { year: 1980, r: 0.2577 },
+    { year: 1981, r: -0.0973 },
+    { year: 1982, r: 0.1476 },
+    { year: 1983, r: 0.1727 },
+    { year: 1984, r: 0.0140 },
+    { year: 1985, r: 0.2633 },
+    { year: 1986, r: 0.1462 },
+    { year: 1987, r: 0.0203 },
+    { year: 1988, r: 0.1240 },
+    { year: 1989, r: 0.2725 },
+    { year: 1990, r: -0.0656 },
+    { year: 1991, r: 0.2631 },
+    { year: 1992, r: 0.0446 },
+    { year: 1993, r: 0.0706 },
+    { year: 1994, r: -0.0154 },
+    { year: 1995, r: 0.3411 },
+    { year: 1996, r: 0.2026 },
+    { year: 1997, r: 0.3101 },
+    { year: 1998, r: 0.2667 },
+    { year: 1999, r: 0.1953 },
+    { year: 2000, r: -0.1014 },
+    { year: 2001, r: -0.1304 },
+    { year: 2002, r: -0.2337 },
+    { year: 2003, r: 0.2638 },
+    { year: 2004, r: 0.0899 },
+    { year: 2005, r: 0.0300 },
+    { year: 2006, r: 0.1362 },
+    { year: 2007, r: 0.0353 },
+    { year: 2008, r: -0.3849 },
+    { year: 2009, r: 0.2345 },
+    { year: 2010, r: 0.1278 },
+    { year: 2011, r: 0.0000 },
+    { year: 2012, r: 0.1341 },
+    { year: 2013, r: 0.2960 },
+    { year: 2014, r: 0.1139 },
+    { year: 2015, r: -0.0073 },
+    { year: 2016, r: 0.0954 },
+    { year: 2017, r: 0.1942 },
+    { year: 2018, r: -0.0624 },
+    { year: 2019, r: 0.2888 },
+    { year: 2020, r: 0.1626 },
+    { year: 2021, r: 0.2689 },
+    { year: 2022, r: -0.1944 },
+    { year: 2023, r: 0.2423 },
+    { year: 2024, r: 0.2331 },
+    { year: 2025, r: 0.1400 }
+  ];
+
+  const HISTORICAL_INFLATION = [
+    { year: 1914, pct: 1.0 },
+    { year: 1915, pct: 1.0 },
+    { year: 1916, pct: 7.9 },
+    { year: 1917, pct: 17.4 },
+    { year: 1918, pct: 18.0 },
+    { year: 1919, pct: 14.6 },
+    { year: 1920, pct: 15.6 },
+    { year: 1921, pct: -10.5 },
+    { year: 1922, pct: -6.1 },
+    { year: 1923, pct: 1.8 },
+    { year: 1924, pct: 0.0 },
+    { year: 1925, pct: 2.3 },
+    { year: 1926, pct: 1.1 },
+    { year: 1927, pct: -1.7 },
+    { year: 1928, pct: -1.7 },
+    { year: 1929, pct: 0.0 },
+    { year: 1930, pct: -2.3 },
+    { year: 1931, pct: -9.0 },
+    { year: 1932, pct: -9.9 },
+    { year: 1933, pct: -5.1 },
+    { year: 1934, pct: 3.1 },
+    { year: 1935, pct: 2.2 },
+    { year: 1936, pct: 1.5 },
+    { year: 1937, pct: 3.6 },
+    { year: 1938, pct: -2.1 },
+    { year: 1939, pct: -1.4 },
+    { year: 1940, pct: 0.7 },
+    { year: 1941, pct: 5.0 },
+    { year: 1942, pct: 10.9 },
+    { year: 1943, pct: 6.1 },
+    { year: 1944, pct: 1.7 },
+    { year: 1945, pct: 2.3 },
+    { year: 1946, pct: 8.3 },
+    { year: 1947, pct: 14.4 },
+    { year: 1948, pct: 8.1 },
+    { year: 1949, pct: -1.2 },
+    { year: 1950, pct: 1.3 },
+    { year: 1951, pct: 7.9 },
+    { year: 1952, pct: 1.9 },
+    { year: 1953, pct: 0.8 },
+    { year: 1954, pct: 0.7 },
+    { year: 1955, pct: -0.4 },
+    { year: 1956, pct: 1.5 },
+    { year: 1957, pct: 3.3 },
+    { year: 1958, pct: 2.8 },
+    { year: 1959, pct: 0.7 },
+    { year: 1960, pct: 1.7 },
+    { year: 1961, pct: 1.0 },
+    { year: 1962, pct: 1.0 },
+    { year: 1963, pct: 1.3 },
+    { year: 1964, pct: 1.3 },
+    { year: 1965, pct: 1.6 },
+    { year: 1966, pct: 2.9 },
+    { year: 1967, pct: 3.1 },
+    { year: 1968, pct: 4.2 },
+    { year: 1969, pct: 5.5 },
+    { year: 1970, pct: 5.7 },
+    { year: 1971, pct: 4.4 },
+    { year: 1972, pct: 3.2 },
+    { year: 1973, pct: 6.2 },
+    { year: 1974, pct: 11.0 },
+    { year: 1975, pct: 9.1 },
+    { year: 1976, pct: 5.8 },
+    { year: 1977, pct: 6.5 },
+    { year: 1978, pct: 7.6 },
+    { year: 1979, pct: 11.3 },
+    { year: 1980, pct: 13.5 },
+    { year: 1981, pct: 10.3 },
+    { year: 1982, pct: 6.2 },
+    { year: 1983, pct: 3.2 },
+    { year: 1984, pct: 4.3 },
+    { year: 1985, pct: 3.6 },
+    { year: 1986, pct: 1.9 },
+    { year: 1987, pct: 3.6 },
+    { year: 1988, pct: 4.1 },
+    { year: 1989, pct: 4.8 },
+    { year: 1990, pct: 5.4 },
+    { year: 1991, pct: 4.2 },
+    { year: 1992, pct: 3.0 },
+    { year: 1993, pct: 3.0 },
+    { year: 1994, pct: 2.6 },
+    { year: 1995, pct: 2.8 },
+    { year: 1996, pct: 3.0 },
+    { year: 1997, pct: 2.3 },
+    { year: 1998, pct: 1.6 },
+    { year: 1999, pct: 2.2 },
+    { year: 2000, pct: 3.4 },
+    { year: 2001, pct: 2.8 },
+    { year: 2002, pct: 1.6 },
+    { year: 2003, pct: 2.3 },
+    { year: 2004, pct: 2.7 },
+    { year: 2005, pct: 3.4 },
+    { year: 2006, pct: 3.2 },
+    { year: 2007, pct: 2.8 },
+    { year: 2008, pct: 3.8 },
+    { year: 2009, pct: -0.4 },
+    { year: 2010, pct: 1.6 },
+    { year: 2011, pct: 3.2 },
+    { year: 2012, pct: 2.1 },
+    { year: 2013, pct: 1.5 },
+    { year: 2014, pct: 1.6 },
+    { year: 2015, pct: 0.1 },
+    { year: 2016, pct: 1.3 },
+    { year: 2017, pct: 2.1 },
+    { year: 2018, pct: 2.4 },
+    { year: 2019, pct: 1.8 },
+    { year: 2020, pct: 1.2 },
+    { year: 2021, pct: 4.7 },
+    { year: 2022, pct: 8.0 },
+    { year: 2023, pct: 4.1 },
+    { year: 2024, pct: 2.9 }
+  ];
+
+  const INFLATION_BY_YEAR = HISTORICAL_INFLATION.reduce((map, entry) => {
+    map.set(entry.year, entry.pct);
+    return map;
+  }, new Map());
+  const LAST_KNOWN_INFLATION = HISTORICAL_INFLATION[HISTORICAL_INFLATION.length - 1]?.pct ?? 0;
+  const RETURN_INFLATION_SERIES = HISTORICAL_RETURNS_SPY.map(entry => ({
+    year: entry.year,
+    r: entry.r,
+    inflation: INFLATION_BY_YEAR.get(entry.year) ?? LAST_KNOWN_INFLATION
+  }));
+
+  const INFLATION_PRESETS = [
+    {
+      id: "custom",
+      label: "Manual entry (leave as-is)",
+      compute: () => null
+    },
+    {
+      id: "last10",
+      label: "Average of last 10 years",
+      compute: () => averageInflationFromRange(2015, 2024)
+    },
+    {
+      id: "last30",
+      label: "Average of last 30 years",
+      compute: () => averageInflationFromRange(1995, 2024)
+    },
+    {
+      id: "modern",
+      label: "Average since 1990",
+      compute: () => averageInflationFromRange(1990, 2024)
+    },
+    {
+      id: "stagflation",
+      label: "Stagflation era (1973–1982)",
+      compute: () => averageInflationFromRange(1973, 1982)
+    },
+    {
+      id: "full",
+      label: "Full history (1914–2024)",
+      compute: () => averageInflationFromRange(1914, 2024)
+    }
+  ];
+
+  const STRESS_SCENARIOS = {
+    stagflation: {
+      label: "Stagflation 1973–1982",
+      returns: [-0.1737, -0.2972, 0.3155, 0.1915, -0.115, 0.0106, 0.1231, 0.2577, -0.0973, 0.1476]
+    },
+    dotcom: {
+      label: "Dot-com bust 2000–2009",
+      returns: [-0.1014, -0.1304, -0.2337, 0.2638, 0.0899, 0.03, 0.1362, 0.0353, -0.3849, 0.2345]
+    },
+    gfc: {
+      label: "Global Financial Crisis 2007–2013",
+      returns: [0.0353, -0.3849, 0.2345, 0.1278, 0.0, 0.1341, 0.296]
+    }
+  };
+
+  const SAVINGS_TARGET_SUCCESS = 0.9;
+  const MAX_SAVINGS_SEARCH = 1000000;
+  const SAVINGS_MIN_INCREMENT = 500;
+  const MAX_EXTRA_WORK_YEARS = 15;
+
+  const ctx = document.getElementById("chart").getContext("2d");
+  const incomeCtx = document.getElementById("incomeChart").getContext("2d");
+  const resultsTableBody = document.getElementById("resultsTableBody");
+  const mcModeSelect = document.getElementById("mcMode");
+  const mcNormalFields = document.querySelectorAll(".mc-normal-field");
+  const ssToggle = document.getElementById("ssEnabled");
+  const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+  const bucketToggle = document.getElementById("bucketsEnabled");
+  const bucketFieldWrappers = document.querySelectorAll("[data-bucket-field]");
+  const goalListEl = document.getElementById("goalList");
+  const addGoalBtn = document.getElementById("addGoalBtn");
+  const stressResultsEl = document.getElementById("stressResults");
+  const stressTableWrap = document.getElementById("stressTableWrap");
+  const stressTableBody = document.getElementById("stressTableBody");
+  const tabButtons = document.querySelectorAll(".tab-button");
+  const tabPanels = document.querySelectorAll(".tab-panel");
+  const scenarioListEl = document.getElementById("scenarioList");
+  const inflationTableBody = document.getElementById("inflationTableBody");
+  const inflationPresetSelect = document.getElementById("inflationPreset");
+  const inflationYearSelect = document.getElementById("inflationYearSelect");
+  const inflationSelectionNote = document.getElementById("inflationSelectionNote");
+  const defaultInflationNoteText = inflationSelectionNote ? inflationSelectionNote.textContent : "";
+  const savingsSuggestionEl = document.getElementById("savingsSuggestionNote");
+  const defaultSavingsSuggestionText = savingsSuggestionEl ? savingsSuggestionEl.textContent : "";
+  let chart;
+  let incomeChart;
+  let lastDetResult = null;
+  let lastMcResult = null;
+  let lastYears = [];
+  let showOptionalIncomeColumns = true;
+
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  function fmtCurrency(v) {
+    if (!Number.isFinite(v)) return "0";
+    const abs = Math.abs(v);
+    const sign = v < 0 ? "-" : "";
+    let scaled = v;
+    let suffix = "";
+    if (abs >= 1e9) {
+      scaled = v / 1e9;
+      suffix = "B";
+    } else if (abs >= 1e6) {
+      scaled = v / 1e6;
+      suffix = "M";
+    } else if (abs >= 1e3) {
+      scaled = v / 1e3;
+      suffix = "k";
+    }
+    return sign + scaled.toFixed(2) + suffix;
+  }
+
+  function fmtFullCurrency(v) {
+    if (!Number.isFinite(v)) {
+      return "$0";
+    }
+    return v.toLocaleString(undefined, {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0
+    });
+  }
+
+  function percentile(sortedArr, p) {
+    if (sortedArr.length === 0) return 0;
+    const idx = (sortedArr.length - 1) * p;
+    const lower = Math.floor(idx);
+    const upper = Math.ceil(idx);
+    if (lower === upper) return sortedArr[lower];
+    const w = idx - lower;
+    return sortedArr[lower] * (1 - w) + sortedArr[upper] * w;
+  }
+
+  function normalizeShares({ taxable = 0, taxDeferred = 0, roth = 0 }) {
+    let total = taxable + taxDeferred + roth;
+    if (!Number.isFinite(total) || total <= 0) {
+      return { taxable: 0.4, taxDeferred: 0.4, roth: 0.2 };
+    }
+    return {
+      taxable: taxable / total,
+      taxDeferred: taxDeferred / total,
+      roth: roth / total
+    };
+  }
+
+  function averageInflationFromRange(startYear, endYear) {
+    if (!Number.isFinite(startYear) || !Number.isFinite(endYear)) return null;
+    const sample = HISTORICAL_INFLATION.filter(
+      entry => entry.year >= startYear && entry.year <= endYear
+    );
+    if (!sample.length) return null;
+    const total = sample.reduce((sum, entry) => sum + entry.pct, 0);
+    return total / sample.length;
+  }
+
+  function setInflationInputPercent(percent, reason) {
+    const inflationInput = document.getElementById("inflation");
+    if (!inflationInput || !Number.isFinite(percent)) return;
+    const displayValue = parseFloat(percent.toFixed(2));
+    inflationInput.value = Number.isFinite(displayValue) ? displayValue : percent;
+    if (inflationSelectionNote) {
+      const suffix = reason ? ` (${reason})` : "";
+      inflationSelectionNote.textContent = `Inflation assumption set to ${percent.toFixed(2)}%${suffix}.`;
+    }
+  }
+
+  function resetInflationSelectionNote() {
+    if (inflationSelectionNote) {
+      inflationSelectionNote.textContent = defaultInflationNoteText;
+    }
+  }
+
+  function renderInflationTable() {
+    if (!inflationTableBody) return;
+    inflationTableBody.innerHTML = "";
+    HISTORICAL_INFLATION.slice()
+      .sort((a, b) => b.year - a.year)
+      .forEach(entry => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${entry.year}</td><td>${entry.pct.toFixed(1)}%</td>`;
+        tr.addEventListener("click", () => {
+          setInflationInputPercent(entry.pct, `Historical ${entry.year}`);
+          if (inflationYearSelect) inflationYearSelect.value = String(entry.year);
+          if (inflationPresetSelect) inflationPresetSelect.value = "custom";
+        });
+        inflationTableBody.appendChild(tr);
+      });
+  }
+
+  function populateInflationYearSelect() {
+    if (!inflationYearSelect) return;
+    inflationYearSelect.innerHTML = "";
+    const defaultOption = document.createElement("option");
+    defaultOption.value = "";
+    defaultOption.textContent = "Select a year";
+    inflationYearSelect.appendChild(defaultOption);
+    HISTORICAL_INFLATION.forEach(entry => {
+      const opt = document.createElement("option");
+      opt.value = entry.year;
+      opt.textContent = entry.year;
+      inflationYearSelect.appendChild(opt);
+    });
+  }
+
+  function populateInflationPresetSelect() {
+    if (!inflationPresetSelect) return;
+    inflationPresetSelect.innerHTML = "";
+    INFLATION_PRESETS.forEach(preset => {
+      const option = document.createElement("option");
+      option.value = preset.id;
+      const pct = typeof preset.compute === "function" ? preset.compute() : null;
+      option.textContent = Number.isFinite(pct)
+        ? `${preset.label} (${pct.toFixed(1)}%)`
+        : preset.label;
+      inflationPresetSelect.appendChild(option);
+    });
+  }
+
+  function initInflationTools() {
+    populateInflationPresetSelect();
+    populateInflationYearSelect();
+    renderInflationTable();
+  }
+
+  function buildSavingsSuggestionConfig(mcConfig) {
+    if (!mcConfig) return null;
+    const baseSims = Number(mcConfig.numSims) || 0;
+    let suggestionSims = Math.floor(baseSims * 0.6);
+    if (!Number.isFinite(suggestionSims) || suggestionSims <= 0) {
+      suggestionSims = baseSims > 0 ? baseSims : 500;
+    }
+    suggestionSims = Math.max(200, Math.min(2000, suggestionSims));
+    return { ...mcConfig, numSims: suggestionSims };
+  }
+
+  function resetSavingsSuggestionNote() {
+    if (savingsSuggestionEl) {
+      savingsSuggestionEl.textContent = defaultSavingsSuggestionText;
+    }
+  }
+
+  function estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, target = SAVINGS_TARGET_SUCCESS) {
+    if (!params || !mcConfig || !baseMcResult) return null;
+    const baseSuccess = baseMcResult.successProb;
+    const baseAnnual = params.annualContrib;
+    if (!Number.isFinite(baseSuccess) || !Number.isFinite(baseAnnual)) return null;
+    if (baseSuccess >= target) {
+      return {
+        extraAnnual: 0,
+        achievedSuccess: baseSuccess,
+        target
+      };
+    }
+    const suggestionConfig = buildSavingsSuggestionConfig(mcConfig);
+    if (!suggestionConfig) return null;
+    const cache = new Map();
+    const maxExtra = MAX_SAVINGS_SEARCH;
+
+    const runTrial = extra => {
+      const safeExtra = Math.max(0, extra);
+      const key = safeExtra.toFixed(2);
+      if (cache.has(key)) return cache.get(key);
+      const trialParams = { ...params, annualContrib: Math.max(0, baseAnnual + safeExtra) };
+      const trialResult = runMonteCarlo(trialParams, suggestionConfig);
+      cache.set(key, trialResult.successProb);
+      return trialResult.successProb;
+    };
+
+    let lowExtra = 0;
+    let lowSuccess = baseSuccess;
+    let highExtra = 0;
+    let highSuccess = baseSuccess;
+    let guard = 0;
+    while (highExtra < maxExtra && highSuccess < target && guard < 12) {
+      highExtra = highExtra === 0 ? 5000 : highExtra * 2;
+      if (highExtra > maxExtra) highExtra = maxExtra;
+      highSuccess = runTrial(highExtra);
+      guard += 1;
+      if (highSuccess >= target) break;
+      if (highExtra >= maxExtra) break;
+    }
+
+    if (highSuccess < target) {
+      return {
+        extraAnnual: null,
+        achievedSuccess: highSuccess,
+        target
+      };
+    }
+
+    let bestExtra = highExtra;
+    let bestSuccess = highSuccess;
+    for (let i = 0; i < 14; i++) {
+      if (highExtra - lowExtra < SAVINGS_MIN_INCREMENT) break;
+      const midExtra = (lowExtra + highExtra) / 2;
+      const midSuccess = runTrial(midExtra);
+      if (midSuccess >= target) {
+        bestExtra = midExtra;
+        bestSuccess = midSuccess;
+        highExtra = midExtra;
+        highSuccess = midSuccess;
+      } else {
+        lowExtra = midExtra;
+        lowSuccess = midSuccess;
+      }
+    }
+
+    const roundedExtra = Math.max(0, Math.ceil(bestExtra / SAVINGS_MIN_INCREMENT) * SAVINGS_MIN_INCREMENT);
+    const roundedSuccess = runTrial(roundedExtra);
+    return {
+      extraAnnual: roundedExtra,
+      achievedSuccess: roundedSuccess,
+      target
+    };
+  }
+
+  function estimateAdditionalWorkYears(params, mcConfig, baseMcResult, target = SAVINGS_TARGET_SUCCESS) {
+    if (!params || !mcConfig || !baseMcResult) return null;
+    const baseSuccess = baseMcResult.successProb;
+    if (!Number.isFinite(baseSuccess)) return null;
+    if (baseSuccess >= target) {
+      return {
+        extraYears: 0,
+        achievedSuccess: baseSuccess,
+        target,
+        retireAge: params.retireAge
+      };
+    }
+    if (params.retireAge >= params.endAge - 1) {
+      return {
+        extraYears: null,
+        achievedSuccess: baseSuccess,
+        target,
+        retireAge: params.retireAge
+      };
+    }
+    const suggestionConfig = buildSavingsSuggestionConfig(mcConfig);
+    if (!suggestionConfig) return null;
+    const maxYears = Math.max(
+      0,
+      Math.min(MAX_EXTRA_WORK_YEARS, params.endAge - params.retireAge - 1)
+    );
+    if (maxYears <= 0) {
+      return {
+        extraYears: null,
+        achievedSuccess: baseSuccess,
+        target,
+        retireAge: params.retireAge
+      };
+    }
+    let bestYears = null;
+    let bestSuccess = baseSuccess;
+    for (let years = 1; years <= maxYears; years++) {
+      const trialRetireAge = Math.min(params.endAge - 1, params.retireAge + years);
+      if (trialRetireAge <= params.retireAge) continue;
+      const trialParams = { ...params, retireAge: trialRetireAge };
+      const trialResult = runMonteCarlo(trialParams, suggestionConfig);
+      const success = trialResult.successProb;
+      if (success >= target) {
+        bestYears = years;
+        bestSuccess = success;
+        break;
+      }
+      if (success > bestSuccess) {
+        bestSuccess = success;
+      }
+    }
+    if (bestYears === null) {
+      return {
+        extraYears: null,
+        achievedSuccess: bestSuccess,
+        target,
+        retireAge: Math.min(params.endAge - 1, params.retireAge + maxYears)
+      };
+    }
+    return {
+      extraYears: bestYears,
+      achievedSuccess: bestSuccess,
+      target,
+      retireAge: Math.min(params.endAge - 1, params.retireAge + bestYears)
+    };
+  }
+
+  function updateSavingsSuggestion(params, mcConfig, baseMcResult) {
+    if (!savingsSuggestionEl) return;
+    if (!baseMcResult) {
+      resetSavingsSuggestionNote();
+      return;
+    }
+    const suggestion = estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, SAVINGS_TARGET_SUCCESS);
+    const workSuggestion = estimateAdditionalWorkYears(params, mcConfig, baseMcResult, SAVINGS_TARGET_SUCCESS);
+    if (!suggestion) {
+      savingsSuggestionEl.textContent = "Unable to compute a savings suggestion for these inputs.";
+      return;
+    }
+    const targetPct = (suggestion.target * 100).toFixed(0);
+    const successPct = (suggestion.achievedSuccess * 100).toFixed(1);
+    const maxBump = fmtFullCurrency(MAX_SAVINGS_SEARCH);
+    if (suggestion.extraAnnual === 0) {
+      let msg = `<span class="badge">On track</span> Success probability is already ${successPct}%, clearing the ${targetPct}% goal.`;
+      if (workSuggestion && workSuggestion.extraYears > 0) {
+        const yearsText = workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
+        const workPct = (workSuggestion.achievedSuccess * 100).toFixed(1);
+        msg += ` Working ${yearsText} (retire age ${workSuggestion.retireAge}) would raise it further to ${workPct}%.`;
+      }
+      savingsSuggestionEl.innerHTML = msg;
+    } else if (suggestion.extraAnnual === null) {
+      let msg = `<span class="badge warn">Heads up</span> Even adding ${maxBump} per year kept success below ${targetPct}%.`;
+      if (workSuggestion && workSuggestion.extraYears) {
+        const yearsText =
+          workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
+        const workPct = (workSuggestion.achievedSuccess * 100).toFixed(1);
+        msg += ` Working ${yearsText} (retire age ${workSuggestion.retireAge}) reaches ${workPct}%.`;
+      } else if (workSuggestion && workSuggestion.extraYears === null) {
+        msg += ` Working up to ${MAX_EXTRA_WORK_YEARS} extra years still stayed below ${targetPct}%.`;
+      } else {
+        msg += " Consider changing retirement age, spending, or returns.";
+      }
+      savingsSuggestionEl.innerHTML = msg;
+    } else {
+      let msg = `Adding about ${fmtFullCurrency(suggestion.extraAnnual)} per year lifts success to ${successPct}% (target ${targetPct}%).`;
+      if (workSuggestion && workSuggestion.extraYears > 0) {
+        const yearsText =
+          workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
+        const workPct = (workSuggestion.achievedSuccess * 100).toFixed(1);
+        msg += ` Alternatively, working ${yearsText} (retire age ${workSuggestion.retireAge}) hits ${workPct}%.`;
+      } else if (workSuggestion && workSuggestion.extraYears === 0) {
+        msg += " Working longer isn’t required for the 90% goal.";
+      } else if (workSuggestion && workSuggestion.extraYears === null) {
+        msg += ` Working up to ${MAX_EXTRA_WORK_YEARS} extra years stayed below ${targetPct}%.`;
+      }
+      savingsSuggestionEl.innerHTML = msg;
+    }
+  }
+
+  function initBuckets(total, shares) {
+    return {
+      taxable: total * shares.taxable,
+      taxDeferred: total * shares.taxDeferred,
+      roth: total * shares.roth
+    };
+  }
+
+  function cloneBuckets(b) {
+    return {
+      taxable: b.taxable,
+      taxDeferred: b.taxDeferred,
+      roth: b.roth
+    };
+  }
+
+  function totalBuckets(b) {
+    return b.taxable + b.taxDeferred + b.roth;
+  }
+
+  function allocateContribution(buckets, amount, shares) {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    buckets.taxable += amount * shares.taxable;
+    buckets.taxDeferred += amount * shares.taxDeferred;
+    buckets.roth += amount * shares.roth;
+  }
+
+  function withdrawFromBuckets(buckets, amount) {
+    if (!Number.isFinite(amount) || amount <= 0) return { shortage: 0 };
+    let remaining = amount;
+    ["taxable", "taxDeferred", "roth"].forEach(key => {
+      const take = Math.min(remaining, buckets[key]);
+      buckets[key] -= take;
+      remaining -= take;
+    });
+    return { shortage: remaining };
+  }
+
+  function applyGrowth(buckets, rate) {
+    const growth = 1 + rate;
+    buckets.taxable *= growth;
+    buckets.taxDeferred *= growth;
+    buckets.roth *= growth;
+  }
+
+  function buildHistoricalPathSequencer(horizonYears) {
+    if (RETURN_INFLATION_SERIES.length === 0) {
+      return () => ({ r: 0, inflation: LAST_KNOWN_INFLATION });
+    }
+    const maxStart = RETURN_INFLATION_SERIES.length - horizonYears;
+    const startIndex =
+      maxStart > 0 ? Math.floor(Math.random() * (maxStart + 1)) : 0;
+    return yearOffset => {
+      const idx = startIndex + yearOffset;
+      const wrappedIdx = idx % RETURN_INFLATION_SERIES.length;
+      return RETURN_INFLATION_SERIES[wrappedIdx];
+    };
+  }
+
+  function sampleNormal(mean, stdev) {
+    let u = 0;
+    let v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    const z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+    return mean + stdev * z;
+  }
+
+  function applyReturnShift(r, shift) {
+    return clamp(r + shift, -0.99, 1.5);
+  }
+
+  function computeGoalWithdrawal(age, params, inflationOverride) {
+    const effectiveInflation = Number.isFinite(inflationOverride)
+      ? inflationOverride
+      : params.inflation;
+    if (!params.goalEvents || !params.goalEvents.length) return 0;
+    return params.goalEvents.reduce((sum, goal) => {
+      if (!Number.isFinite(goal.age) || goal.age !== age) return sum;
+      if (!Number.isFinite(goal.amount) || goal.amount <= 0) return sum;
+      const years = Math.max(0, age - params.currentAge);
+      return sum + goal.amount * Math.pow(1 + effectiveInflation, years);
+    }, 0);
+  }
+
+  function computeExtraIncome(age, params, inflationOverride) {
+    const effectiveInflation = Number.isFinite(inflationOverride)
+      ? inflationOverride
+      : params.inflation;
+    if (!params.incomeStreams || !params.incomeStreams.length) return 0;
+    return params.incomeStreams.reduce((sum, stream) => {
+      if (!Number.isFinite(stream.startAge) || !Number.isFinite(stream.amount) || stream.amount <= 0) return sum;
+      if (age < stream.startAge) return sum;
+      const baseFactor = Math.pow(1 + effectiveInflation, Math.max(0, stream.startAge - params.currentAge));
+      let payment = stream.amount * baseFactor;
+      if (stream.cola) {
+        const colaYears = Math.max(0, age - stream.startAge);
+        payment *= Math.pow(1 + effectiveInflation, colaYears);
+      }
+      return sum + payment;
+    }, 0);
+  }
+
+  function getSpendingTarget(age, params, spendingState, inflationOverride) {
+    const effectiveInflation = Number.isFinite(inflationOverride)
+      ? inflationOverride
+      : params.inflation;
+    if (age < params.retireAge) {
+      spendingState.prev = null;
+      return 0;
+    }
+    const base = params.incomeNeed * Math.pow(1 + effectiveInflation, Math.max(0, age - params.currentAge));
+    if (params.spendingStrategy !== "guardrail") {
+      spendingState.prev = base;
+      return base;
+    }
+    const prev = spendingState.prev ?? base;
+    const inflationBump = prev * (1 + effectiveInflation);
+    const floor = prev * 0.9;
+    const cap = prev * 1.1;
+    let target = Math.min(Math.max(inflationBump, floor), cap);
+    target = Math.max(target, base);
+    spendingState.prev = target;
+    return target;
+  }
+
+  function simulateDeterministic(params, opts = {}) {
+    const bucketShares = params.bucketShares;
+    let buckets = initBuckets(params.currentSavings, bucketShares);
+    let age = params.currentAge;
+    const years = [];
+    const balances = [];
+    const incomeNeeded = [];
+    const incomeOffsets = [];
+    const netNeeds = [];
+    const otherIncomeSeries = [];
+    const bucketHistory = [];
+    const coverageFlags = [];
+    const spendingState = { prev: null };
+    const customReturns = opts.customReturns || null;
+    const shift = params.returnShift || 0;
+
+    const pickReturn = (yearAge, defaultRate) => {
+      if (!customReturns) return defaultRate;
+      const offset = yearAge - params.currentAge;
+      if (offset >= 0 && offset < customReturns.length) {
+        return applyReturnShift(customReturns[offset], shift);
+      }
+      return defaultRate;
+    };
+
+    while (age <= params.endAge) {
+      years.push(age);
+      balances.push(totalBuckets(buckets));
+      bucketHistory.push(cloneBuckets(buckets));
+      let coverageMet = true;
+
+      const goalWithdrawal = computeGoalWithdrawal(age, params);
+      if (goalWithdrawal > 0) {
+        const goalResult = withdrawFromBuckets(buckets, goalWithdrawal);
+        if (goalResult.shortage > 1e-4) {
+          coverageMet = false;
+        }
+      }
+
+      const isWorking = age < params.retireAge;
+      if (isWorking) {
+        incomeNeeded.push(0);
+        incomeOffsets.push(0);
+        netNeeds.push(0);
+        otherIncomeSeries.push(0);
+        allocateContribution(buckets, params.annualContrib, bucketShares);
+        applyGrowth(buckets, pickReturn(age, params.preRetReturn));
+      } else {
+        const desiredAfterTax = getSpendingTarget(age, params, spendingState);
+        incomeNeeded.push(desiredAfterTax);
+        const otherIncome = computeExtraIncome(age, params);
+        otherIncomeSeries.push(otherIncome);
+        incomeOffsets.push(otherIncome);
+        const netAfterTax = Math.max(desiredAfterTax - otherIncome, 0);
+        netNeeds.push(netAfterTax);
+        const grossWithdrawal = netAfterTax / params.afterTaxFactor;
+        const withdrawalResult = withdrawFromBuckets(buckets, grossWithdrawal);
+        if (withdrawalResult.shortage > 1e-4) {
+          coverageMet = false;
+        }
+        applyGrowth(buckets, pickReturn(age, params.postRetReturn));
+      }
+
+      coverageFlags.push(coverageMet);
+      age += 1;
+    }
+
+    return {
+      years,
+      balances,
+      incomeNeeded,
+      incomeOffsets,
+      otherIncomeSeries,
+      netNeeds,
+      bucketHistory,
+      coverageFlags,
+      finalBuckets: cloneBuckets(buckets)
+    };
+  }
+
+  function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
+    const bucketShares = params.bucketShares;
+    let buckets = initBuckets(params.currentSavings, bucketShares);
+    let age = params.currentAge;
+    const balances = [];
+    const coverage = [];
+    const spendingState = { prev: null };
+    const useHistoricalInflation = params.inflationMode === "historical";
+    const sequencer =
+      mcConfig.mode === "historical" && historicalSequencerFactory
+        ? historicalSequencerFactory()
+        : null;
+
+    while (age <= params.endAge) {
+      balances.push(totalBuckets(buckets));
+      let coverageMet = true;
+      const yearOffset = age - params.currentAge;
+      let inflationOverride = params.inflation;
+
+      let r;
+      let seqStep = null;
+      if (mcConfig.mode === "historical" && sequencer) {
+        seqStep = sequencer(yearOffset) || {};
+        r = seqStep.r ?? 0;
+      } else {
+        r = sampleNormal(mcConfig.mean, mcConfig.stdev);
+      }
+      r = applyReturnShift(r, params.returnShift);
+      if (useHistoricalInflation && seqStep && Number.isFinite(Number(seqStep.inflation))) {
+        const shifted = clamp(
+          Number(seqStep.inflation) / 100 + (params.inflationShift || 0),
+          -0.01,
+          0.12
+        );
+        inflationOverride = shifted;
+      } else {
+        inflationOverride = params.inflation;
+      }
+      if (!Number.isFinite(inflationOverride)) {
+        inflationOverride = params.inflation;
+      }
+
+      const goalWithdrawal = computeGoalWithdrawal(age, params, inflationOverride);
+      if (goalWithdrawal > 0) {
+        const goalResult = withdrawFromBuckets(buckets, goalWithdrawal);
+        if (goalResult.shortage > 1e-4) {
+          coverageMet = false;
+        }
+      }
+
+      if (age < params.retireAge) {
+        allocateContribution(buckets, params.annualContrib, bucketShares);
+        applyGrowth(buckets, r);
+      } else {
+        const desiredAfterTax = getSpendingTarget(age, params, spendingState, inflationOverride);
+        const otherIncome = computeExtraIncome(age, params, inflationOverride);
+        const netAfterTax = Math.max(desiredAfterTax - otherIncome, 0);
+        const gross = netAfterTax / params.afterTaxFactor;
+        const result = withdrawFromBuckets(buckets, gross);
+        if (result.shortage > 1e-4) {
+          coverageMet = false;
+        }
+        applyGrowth(buckets, r);
+      }
+
+      coverage.push(coverageMet);
+      age += 1;
+    }
+
+    return { balances, coverage };
+  }
+
+  function runMonteCarlo(params, mcConfig) {
+    const horizonYears = params.endAge - params.currentAge + 1;
+    const paths = [];
+    const finalBalances = [];
+    const successFlags = [];
+    const coverageCounts = new Array(horizonYears).fill(0);
+    const historicalSequencerFactory =
+      mcConfig.mode === "historical"
+        ? () => buildHistoricalPathSequencer(horizonYears)
+        : null;
+
+    for (let i = 0; i < mcConfig.numSims; i++) {
+      const { balances, coverage } = simulateOneMCPath(
+        params,
+        mcConfig,
+        historicalSequencerFactory
+      );
+      paths.push(balances);
+      finalBalances.push(balances[balances.length - 1]);
+      successFlags.push(balances[balances.length - 1] > 0);
+      coverage.forEach((flag, idx) => {
+        if (flag) coverageCounts[idx] += 1;
+      });
+    }
+
+    const sortedBalances = {
+      p10: [],
+      p50: [],
+      p90: []
+    };
+
+    for (let t = 0; t < horizonYears; t++) {
+      const valuesAtT = paths.map(p => p[t]);
+      valuesAtT.sort((a, b) => a - b);
+      sortedBalances.p10.push(percentile(valuesAtT, 0.1));
+      sortedBalances.p50.push(percentile(valuesAtT, 0.5));
+      sortedBalances.p90.push(percentile(valuesAtT, 0.9));
+    }
+
+    const successProb = successFlags.reduce((acc, v) => acc + (v ? 1 : 0), 0) / mcConfig.numSims;
+
+    return {
+      ...sortedBalances,
+      successProb,
+      finalBalances,
+      coverageProb: coverageCounts.map(count => count / mcConfig.numSims)
+    };
+  }
+
+  function gatherGoalEvents() {
+    return readGoalRowsRaw()
+      .map(goal => ({
+        label: goal.label.trim(),
+        age: parseFloat(goal.age),
+        amount: parseCurrencyValue(goal.amount)
+      }))
+      .filter(goal => goal.label && Number.isFinite(goal.age) && Number.isFinite(goal.amount) && goal.amount > 0);
+  }
+
+  function gatherIncomeStreams() {
+    const streams = [];
+    if (ssToggle && ssToggle.checked) {
+      streams.push({
+        type: "socialSecurity",
+        startAge: parseFloat(document.getElementById("ssStartAge").value),
+        amount: readCurrencyInput("ssAmount"),
+        cola: document.getElementById("ssCola").checked
+      });
+    }
+    return streams.filter(
+      stream =>
+        Number.isFinite(stream.startAge) &&
+        Number.isFinite(stream.amount) &&
+        stream.amount > 0
+    );
+  }
+
+  function gatherParams() {
+    const currentAge = parseFloat(document.getElementById("currentAge").value);
+    const retireAge = parseFloat(document.getElementById("retireAge").value);
+    const endAge = parseFloat(document.getElementById("endAge").value);
+    const currentSavings = readCurrencyInput("currentSavings");
+    const annualContrib = readCurrencyInput("annualContrib");
+    const incomeNeed = readCurrencyInput("incomeNeed");
+    const baseInflation = parseFloat(document.getElementById("inflation").value) / 100;
+    const preRetBase = parseFloat(document.getElementById("preRetReturn").value) / 100;
+    const postRetBase = parseFloat(document.getElementById("postRetReturn").value) / 100;
+    const taxRate = clamp(parseFloat(document.getElementById("taxRate").value) / 100, 0, 0.6);
+    const returnShift = parseFloat(document.getElementById("returnShift").value) / 100;
+    const inflationShift = parseFloat(document.getElementById("inflationShift").value) / 100;
+    const inflation = clamp(baseInflation + inflationShift, -0.01, 0.12);
+    const inflationMode = (document.getElementById("inflationMode")?.value || "fixed").toLowerCase();
+    const preRetReturn = clamp(preRetBase + returnShift, -0.99, 0.2);
+    const postRetReturn = clamp(postRetBase + returnShift, -0.99, 0.2);
+    const bucketsEnabled = bucketToggle ? bucketToggle.checked : false;
+    const bucketShares = bucketsEnabled
+      ? normalizeShares({
+          taxable: parseFloat(document.getElementById("taxableShare").value) || 0,
+          taxDeferred: parseFloat(document.getElementById("taxDeferredShare").value) || 0,
+          roth: parseFloat(document.getElementById("rothShare").value) || 0
+        })
+      : { taxable: 1, taxDeferred: 0, roth: 0 };
+    const spendingStrategy = bucketsEnabled
+      ? document.getElementById("spendingStrategy").value
+      : "fixed";
+
+    return {
+      currentAge,
+      retireAge,
+      endAge,
+      currentSavings,
+      annualContrib,
+      incomeNeed,
+      inflation,
+      preRetReturn,
+      postRetReturn,
+      taxRate,
+      afterTaxFactor: Math.max(0.05, 1 - taxRate),
+      bucketShares,
+      incomeStreams: gatherIncomeStreams(),
+      goalEvents: gatherGoalEvents(),
+      spendingStrategy,
+      returnShift,
+      inflationShift,
+      inflationMode: inflationMode === "fixed" ? "fixed" : "historical"
+    };
+  }
+
+  function gatherMCConfig(returnShift) {
+    const numSims = parseInt(document.getElementById("numSims").value, 10);
+    const mcMode = document.getElementById("mcMode").value;
+    const baseMean = parseFloat(document.getElementById("mcMean").value) / 100;
+    const mean = clamp(baseMean + (returnShift || 0), -0.5, 0.3);
+    const stdev = Math.max(0.01, parseFloat(document.getElementById("mcStdev").value) / 100);
+    return {
+      numSims,
+      mode: mcMode,
+      mean,
+      stdev
+    };
+  }
+
+  function updateChart(yearLabels, detResult, mcResult) {
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: yearLabels.map(String),
+        datasets: [
+          {
+            label: "Deterministic balance",
+            data: detResult.balances,
+            borderWidth: 2,
+            borderColor: "rgba(37, 99, 235, 1)",
+            backgroundColor: "rgba(37, 99, 235, 0.1)",
+            tension: 0.15,
+            fill: false
+          },
+          {
+            label: "MC median",
+            data: mcResult.p50,
+            borderWidth: 2,
+            borderColor: "rgba(21, 128, 61, 1)",
+            backgroundColor: "rgba(21, 128, 61, 0.1)",
+            tension: 0.15,
+            fill: false
+          },
+          {
+            label: "MC 90th %ile",
+            data: mcResult.p90,
+            borderWidth: 1,
+            borderColor: "rgba(16, 185, 129, 0.9)",
+            backgroundColor: "rgba(16, 185, 129, 0.05)",
+            tension: 0.15,
+            fill: false
+          },
+          {
+            label: "MC 10th %ile",
+            data: mcResult.p10,
+            borderWidth: 1,
+            borderColor: "rgba(239, 68, 68, 0.9)",
+            backgroundColor: "rgba(248, 113, 113, 0.05)",
+            tension: 0.15,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${fmtFullCurrency(ctx.parsed.y)}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            ticks: {
+              callback: val => fmtCurrency(val)
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function updateIncomeChart(yearLabels, detResult) {
+    if (incomeChart) incomeChart.destroy();
+    const gross = detResult.incomeNeeded.map(v => (v > 0 ? v : null));
+    const net = detResult.netNeeds.map(v => (v > 0 ? v : null));
+
+    incomeChart = new Chart(incomeCtx, {
+      type: "line",
+      data: {
+        labels: yearLabels.map(String),
+        datasets: [
+          {
+            label: "Gross spending target",
+            data: gross,
+            borderWidth: 2,
+            borderColor: "rgba(249, 115, 22, 1)",
+            backgroundColor: "rgba(251, 146, 60, 0.15)",
+            tension: 0.15,
+            fill: false,
+            spanGaps: true
+          },
+          {
+            label: "Net after other income",
+            data: net,
+            borderWidth: 2,
+            borderColor: "rgba(59, 130, 246, 1)",
+            backgroundColor: "rgba(59, 130, 246, 0.15)",
+            tension: 0.15,
+            fill: false,
+            spanGaps: true,
+            borderDash: [4, 4]
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.dataset.label}: ${fmtFullCurrency(ctx.parsed.y)}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            ticks: { callback: val => fmtCurrency(val) }
+          }
+        }
+      }
+    });
+  }
+
+  function updateResultsTable(yearLabels, detResult, mcResult, options = {}) {
+    const { showOtherIncome = true } = options;
+    if (!resultsTableBody) return;
+    resultsTableBody.innerHTML = "";
+
+    yearLabels.forEach((age, idx) => {
+      const tr = document.createElement("tr");
+      const cellConfigs = [
+        { value: age.toString() },
+        { value: fmtFullCurrency(detResult.balances[idx] ?? 0) },
+        { value: fmtFullCurrency(mcResult.p10[idx] ?? 0) },
+        { value: fmtFullCurrency(mcResult.p50[idx] ?? 0) },
+        { value: fmtFullCurrency(mcResult.p90[idx] ?? 0) },
+        {
+          value:
+            detResult.incomeNeeded[idx] > 0
+              ? fmtFullCurrency(detResult.incomeNeeded[idx])
+              : "—"
+        },
+        {
+          value:
+            detResult.incomeOffsets[idx] > 0
+              ? fmtFullCurrency(detResult.incomeOffsets[idx])
+              : "—",
+          key: "otherIncome"
+        },
+        {
+          value:
+            detResult.netNeeds[idx] > 0
+              ? fmtFullCurrency(detResult.netNeeds[idx])
+              : "—",
+          key: "netNeed"
+        },
+        {
+          value: ((mcResult.coverageProb[idx] ?? 0) * 100).toFixed(0) + "%"
+        }
+      ];
+      cellConfigs.forEach(cell => {
+        const td = document.createElement("td");
+        td.textContent = cell.value;
+        if (cell.key) {
+          td.dataset.col = cell.key;
+        }
+        tr.appendChild(td);
+      });
+      resultsTableBody.appendChild(tr);
+    });
+
+    setTableColumnVisibility("otherIncome", showOtherIncome);
+    setTableColumnVisibility("netNeed", showOtherIncome);
+  }
+
+  function updateSummary(params, detResult, mcResult, options = {}) {
+    const { bucketModelEnabled = true } = options;
+    const summaryEl = document.getElementById("summaryList");
+    const noteEl = document.getElementById("summaryNote");
+    summaryEl.innerHTML = "";
+
+    const yearsToRetire = params.retireAge - params.currentAge;
+    const yearsInRetirement = params.endAge - params.retireAge;
+    const detAtRetire = detResult.balances[yearsToRetire] ?? 0;
+    const detFinal = detResult.balances[detResult.balances.length - 1] ?? 0;
+    const mcMedianFinal = percentile([...mcResult.finalBalances].sort((a, b) => a - b), 0.5);
+    const minCoverage = Math.min(...mcResult.coverageProb) || 0;
+    const finalBuckets = detResult.finalBuckets || { taxable: 0, taxDeferred: 0, roth: 0 };
+
+    const addRow = (label, value) => {
+      const li = document.createElement("li");
+      li.innerHTML = `<span class="summary-label">${label}</span><span class="summary-value">${value}</span>`;
+      summaryEl.appendChild(li);
+    };
+
+    addRow("Years to retirement", yearsToRetire.toString());
+    addRow("Years in retirement (planned)", yearsInRetirement.toString());
+    addRow(
+      `Deterministic balance at retirement (age ${params.retireAge})`,
+      fmtFullCurrency(detAtRetire)
+    );
+    addRow(
+      `Deterministic final balance (age ${params.endAge})`,
+      fmtFullCurrency(detFinal)
+    );
+    addRow("Monte Carlo median final balance", fmtFullCurrency(mcMedianFinal));
+    addRow("Probability of not running out of money", (mcResult.successProb * 100).toFixed(1) + "%");
+    addRow("Lowest annual income coverage (MC)", (minCoverage * 100).toFixed(0) + "%");
+    if (bucketModelEnabled) {
+    addRow(
+        "Final bucket mix",
+        `${fmtFullCurrency(finalBuckets.taxable)} / ${fmtFullCurrency(finalBuckets.taxDeferred)} / ${fmtFullCurrency(finalBuckets.roth)}`
+    );
+    }
+
+    const successProbPct = mcResult.successProb * 100;
+    if (successProbPct >= 90) {
+      noteEl.innerHTML =
+        "Looks robust: high probability of success. Try increasing retirement income or retiring earlier to see sensitivity.";
+      noteEl.className = "small";
+    } else if (successProbPct >= 70) {
+      noteEl.innerHTML =
+        "Borderline comfortable: sequence risk remains. Consider higher savings, later retirement, or lower spending to push success toward 90%+.";
+      noteEl.className = "small";
+    } else {
+      noteEl.innerHTML =
+        "<span class='badge warn'>Heads up</span> Low success probability. Historical sequences still deplete assets early; tweak spending or contributions.";
+      noteEl.className = "small";
+    }
+  }
+
+  function downloadResultsCsv() {
+    if (!lastDetResult || !lastMcResult || !lastYears.length) {
+      alert("Run the projection first to generate data.");
+      return;
+    }
+    const header = [
+      "Age",
+      "Deterministic Balance",
+      "MC 10th %ile",
+      "MC 50th %ile",
+      "MC 90th %ile",
+      "Income Need"
+    ];
+    if (showOptionalIncomeColumns) {
+      header.push("Other Income", "Net Need");
+    }
+    header.push("Income Coverage (MC)");
+    const rows = [header.join(",")];
+    lastYears.forEach((age, idx) => {
+      const baseRow = [
+        age,
+        (lastDetResult.balances[idx] ?? 0).toFixed(2),
+        (lastMcResult.p10[idx] ?? 0).toFixed(2),
+        (lastMcResult.p50[idx] ?? 0).toFixed(2),
+        (lastMcResult.p90[idx] ?? 0).toFixed(2),
+        lastDetResult.incomeNeeded[idx] ?? 0
+      ];
+      if (showOptionalIncomeColumns) {
+        baseRow.push(
+          lastDetResult.incomeOffsets[idx] ?? 0,
+          lastDetResult.netNeeds[idx] ?? 0
+        );
+      }
+      baseRow.push(((lastMcResult.coverageProb[idx] ?? 0) * 100).toFixed(2));
+      rows.push(baseRow.join(","));
+    });
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "retirement_results.csv";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function runStressScenario(key) {
+    const scenario = STRESS_SCENARIOS[key];
+    if (!scenario) return;
+    const params = gatherParams();
+    const detResult = simulateDeterministic(params, { customReturns: scenario.returns });
+    const minBalance = Math.min(...detResult.balances);
+    const minAge = detResult.years[detResult.balances.indexOf(minBalance)];
+    const finalBalance = detResult.balances[detResult.balances.length - 1];
+    const coveragePct = (
+      detResult.coverageFlags.reduce((sum, flag) => sum + (flag ? 1 : 0), 0) / detResult.coverageFlags.length
+    ) * 100;
+
+    stressResultsEl.innerHTML = `
+      <strong>${scenario.label}</strong><br />
+      Final balance: $${fmtCurrency(finalBalance)} • Worst-year balance: $${fmtCurrency(minBalance)} @ age ${minAge}<br />
+      Income fully met in ${coveragePct.toFixed(0)}% of years in this sequence.
+    `;
+
+    if (stressTableBody && stressTableWrap) {
+      stressTableBody.innerHTML = "";
+      detResult.years.forEach((age, idx) => {
+        const tr = document.createElement("tr");
+        const cells = [
+          age.toString(),
+          fmtFullCurrency(detResult.balances[idx] ?? 0),
+          detResult.incomeNeeded[idx] > 0 ? fmtFullCurrency(detResult.incomeNeeded[idx]) : "—",
+          detResult.incomeOffsets[idx] > 0 ? fmtFullCurrency(detResult.incomeOffsets[idx]) : "—",
+          detResult.netNeeds[idx] > 0 ? fmtFullCurrency(detResult.netNeeds[idx]) : "—",
+          detResult.coverageFlags[idx] ? "Yes" : "No"
+        ];
+        cells.forEach(text => {
+          const td = document.createElement("td");
+          td.textContent = text;
+          tr.appendChild(td);
+        });
+        stressTableBody.appendChild(tr);
+      });
+      stressTableWrap.style.display = "";
+      stressTableWrap.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function getStoredScenarios() {
+    try {
+      const raw = localStorage.getItem("retireCalcScenarios");
+      return raw ? JSON.parse(raw) : [];
+    } catch (err) {
+      console.warn("Unable to read scenarios", err);
+      return [];
+    }
+  }
+
+  function setStoredScenarios(list) {
+    localStorage.setItem("retireCalcScenarios", JSON.stringify(list));
+  }
+
+  function captureInputsSnapshot() {
+    const snapshot = {};
+    document.querySelectorAll("input, select, textarea").forEach(el => {
+      if (!el.id) return;
+      if (el.type === "checkbox") {
+        snapshot[el.id] = { type: "checkbox", value: el.checked };
+      } else {
+        snapshot[el.id] = { type: "value", value: el.value };
+      }
+    });
+    if (goalListEl) {
+      snapshot.__goals = { type: "json", value: readGoalRowsRaw() };
+    }
+    return snapshot;
+  }
+
+  function applySnapshot(snapshot) {
+    if (goalListEl && !("__goals" in snapshot)) {
+      setGoalRows([]);
+    }
+    Object.entries(snapshot).forEach(([id, info]) => {
+      if (id === "__goals" && info.type === "json") {
+        setGoalRows(info.value || []);
+        return;
+      }
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (info.type === "checkbox") {
+        el.checked = info.value;
+      } else {
+        el.value = info.value;
+      }
+    });
+    updateSliderDisplays();
+    updateMCNormalFieldsVisibility();
+    updateIncomeStreamFields();
+    updateBucketFieldState();
+    wireAllCurrencyInputs();
+    updateSliderDisplays();
+    updateMCNormalFieldsVisibility();
+    updateIncomeStreamFields();
+    updateBucketFieldState();
+    wireAllCurrencyInputs();
+  }
+
+  function renderScenarioList() {
+    const scenarios = getStoredScenarios();
+    if (!scenarios.length) {
+      scenarioListEl.innerHTML = "<div class='small'>No saved scenarios yet.</div>";
+      return;
+    }
+    scenarioListEl.innerHTML = "";
+    scenarios.forEach((scenario, idx) => {
+      const wrapper = document.createElement("label");
+      wrapper.className = "scenario-pill";
+      wrapper.innerHTML = `
+        <span>
+          <input type="radio" name="scenarioPick" value="${scenario.name}" ${idx === 0 ? "checked" : ""} style="margin-right:0.35rem;" />
+          <strong>${scenario.name}</strong>
+        </span>
+        <span style="font-size:0.75rem;color:#6b7280;">${new Date(scenario.timestamp).toLocaleDateString()}</span>
+      `;
+      scenarioListEl.appendChild(wrapper);
+    });
+  }
+
+  function getSelectedScenarioName() {
+    const input = document.querySelector("input[name='scenarioPick']:checked");
+    return input ? input.value : null;
+  }
+
+  function handleSaveScenario() {
+    const nameInput = document.getElementById("scenarioName");
+    const name = nameInput.value.trim();
+    if (!name) {
+      alert("Enter a scenario name first.");
+      return;
+    }
+    const scenarios = getStoredScenarios();
+    const snapshot = captureInputsSnapshot();
+    const existingIndex = scenarios.findIndex(s => s.name === name);
+    const record = { name, timestamp: Date.now(), snapshot };
+    if (existingIndex >= 0) {
+      scenarios[existingIndex] = record;
+    } else {
+      scenarios.push(record);
+    }
+    setStoredScenarios(scenarios);
+    renderScenarioList();
+  }
+
+  function handleLoadScenario() {
+    const selected = getSelectedScenarioName();
+    if (!selected) {
+      alert("Select a saved scenario to load.");
+      return;
+    }
+    const scenarios = getStoredScenarios();
+    const scenario = scenarios.find(s => s.name === selected);
+    if (!scenario) return;
+    applySnapshot(scenario.snapshot);
+    document.getElementById("runBtn").click();
+  }
+
+  function handleDeleteScenario() {
+    const selected = getSelectedScenarioName();
+    if (!selected) {
+      alert("Select a saved scenario to delete.");
+      return;
+    }
+    const scenarios = getStoredScenarios().filter(s => s.name !== selected);
+    setStoredScenarios(scenarios);
+    renderScenarioList();
+  }
+
+  function handleTabClick(e) {
+    const tab = e.currentTarget.dataset.tab;
+    tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
+    tabPanels.forEach(panel => panel.classList.toggle("active", panel.dataset.tab === tab));
+  }
+
+  function updateSliderDisplays() {
+    const returnShiftValue = document.getElementById("returnShiftValue");
+    const inflationShiftValue = document.getElementById("inflationShiftValue");
+    if (returnShiftValue) {
+      const val = parseFloat(document.getElementById("returnShift").value);
+      returnShiftValue.textContent = `${val.toFixed(2)}%`;
+    }
+    if (inflationShiftValue) {
+      const val = parseFloat(document.getElementById("inflationShift").value);
+      inflationShiftValue.textContent = `${val.toFixed(2)}%`;
+    }
+  }
+
+  function updateMCNormalFieldsVisibility() {
+    const show = mcModeSelect.value === "normal";
+    mcNormalFields.forEach(field => {
+      field.style.display = show ? "" : "none";
+    });
+  }
+
+  function updateIncomeStreamFields() {
+    const enabled = ssToggle ? ssToggle.checked : false;
+    document.querySelectorAll('[data-stream-group="ss"]').forEach(wrapper => {
+      wrapper.classList.toggle("stream-disabled", !enabled);
+      wrapper.querySelectorAll("input").forEach(input => {
+        input.disabled = !enabled;
+      });
+    });
+  }
+
+  function updateBucketFieldState() {
+    const enabled = bucketToggle ? bucketToggle.checked : false;
+    bucketFieldWrappers.forEach(wrapper => {
+      wrapper.classList.toggle("stream-disabled", !enabled);
+      wrapper.querySelectorAll("input, select").forEach(control => {
+        control.disabled = !enabled;
+      });
+    });
+  }
+
+  function parseCurrencyValue(value) {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return value;
+    const raw = value.toString().replace(/,/g, "").trim();
+    if (raw === "") return 0;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function readCurrencyInput(id) {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    return parseCurrencyValue(el.value);
+  }
+
+  function formatCurrencyInput(el) {
+    if (!el) return;
+    const num = parseCurrencyValue(el.value);
+    if (!Number.isFinite(num)) return;
+    el.value = num === 0 ? "" : num.toLocaleString();
+  }
+
+  function setupCurrencyInput(el) {
+    if (!el) return;
+    if (el.dataset.currencyWired !== "1") {
+      el.dataset.currencyWired = "1";
+      el.addEventListener("focus", () => {
+        el.value = el.value.replace(/,/g, "");
+        requestAnimationFrame(() => {
+          if (typeof el.select === "function") el.select();
+        });
+      });
+      el.addEventListener("blur", () => {
+        formatCurrencyInput(el);
+      });
+    }
+    formatCurrencyInput(el);
+  }
+
+  function wireAllCurrencyInputs() {
+    document.querySelectorAll(".currency-input").forEach(setupCurrencyInput);
+  }
+
+  function setTableColumnVisibility(columnKey, visible) {
+    const nodes = document.querySelectorAll(`[data-col="${columnKey}"]`);
+    nodes.forEach(node => {
+      node.classList.toggle("col-hidden", !visible);
+    });
+  }
+
+  function createGoalRow(data = {}) {
+    if (!goalListEl) return;
+    const row = document.createElement("div");
+    row.className = "goal-row";
+
+    const labelInput = document.createElement("input");
+    labelInput.type = "text";
+    labelInput.placeholder = "Label";
+    labelInput.className = "goal-label";
+    labelInput.value = data.label ?? "";
+
+    const ageInput = document.createElement("input");
+    ageInput.type = "number";
+    ageInput.min = "20";
+    ageInput.max = "110";
+    ageInput.placeholder = "Age";
+    ageInput.className = "goal-age";
+    ageInput.value = data.age ?? "";
+
+    const amountWrap = document.createElement("div");
+    amountWrap.className = "inline-unit";
+    const amountPrefix = document.createElement("span");
+    amountPrefix.textContent = "$";
+    const amountInput = document.createElement("input");
+    amountInput.type = "text";
+    amountInput.inputMode = "decimal";
+    amountInput.step = "1000";
+    amountInput.placeholder = "Amount";
+    amountInput.className = "goal-amount currency-input";
+    amountInput.value = data.amount ?? "";
+    amountWrap.appendChild(amountPrefix);
+    amountWrap.appendChild(amountInput);
+    setupCurrencyInput(amountInput);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "secondary goal-remove-btn";
+    removeBtn.textContent = "✕";
+
+    row.appendChild(labelInput);
+    row.appendChild(ageInput);
+    row.appendChild(amountWrap);
+    row.appendChild(removeBtn);
+    goalListEl.appendChild(row);
+  }
+
+  function setGoalRows(rows) {
+    if (!goalListEl) return;
+    goalListEl.innerHTML = "";
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!safeRows.length) {
+      createGoalRow();
+    } else {
+      safeRows.forEach(row => createGoalRow(row));
+    }
+  }
+
+  function readGoalRowsRaw() {
+    if (!goalListEl) return [];
+    return Array.from(goalListEl.querySelectorAll(".goal-row")).map(row => ({
+      label: row.querySelector(".goal-label")?.value ?? "",
+      age: row.querySelector(".goal-age")?.value ?? "",
+      amount: row.querySelector(".goal-amount")?.value ?? ""
+    }));
+  }
+
+  wireAllCurrencyInputs();
+  initInflationTools();
+
+  function resetToDefaults() {
+    const assignments = {
+      currentAge: 35,
+      retireAge: 55,
+      endAge: 100,
+      currentSavings: 1000000,
+      annualContrib: 200000,
+      incomeNeed: 250000,
+      inflation: 3,
+      preRetReturn: 10,
+      postRetReturn: 10,
+      taxRate: 28,
+      numSims: 10000,
+      mcMean: 9,
+      mcStdev: 15,
+      ssStartAge: 67,
+      ssAmount: 40000,
+      taxableShare: 40,
+      taxDeferredShare: 40,
+      rothShare: 20,
+      scenarioName: ""
+    };
+    Object.entries(assignments).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.value = value;
+    });
+    document.getElementById("mcMode").value = "historical";
+    document.getElementById("inflationMode").value = "fixed";
+    document.getElementById("spendingStrategy").value = "fixed";
+    document.getElementById("returnShift").value = 0;
+    document.getElementById("inflationShift").value = 0;
+    if (ssToggle) ssToggle.checked = false;
+    document.getElementById("ssCola").checked = false;
+    if (bucketToggle) bucketToggle.checked = false;
+    if (inflationPresetSelect) inflationPresetSelect.value = "custom";
+    if (inflationYearSelect) inflationYearSelect.value = "";
+    resetInflationSelectionNote();
+    resetSavingsSuggestionNote();
+    updateSliderDisplays();
+    updateMCNormalFieldsVisibility();
+    updateIncomeStreamFields();
+    updateBucketFieldState();
+    setGoalRows([]);
+  }
+
+  function runSimulation() {
+    const params = gatherParams();
+    const mcConfig = gatherMCConfig(params.returnShift);
+    const detResult = simulateDeterministic(params);
+    const mcResult = runMonteCarlo(params, mcConfig);
+    const years = [];
+    for (let age = params.currentAge; age <= params.endAge; age++) {
+      years.push(age);
+    }
+    lastDetResult = detResult;
+    lastMcResult = mcResult;
+    lastYears = years;
+
+    const showOtherIncome =
+      (params.incomeStreams && params.incomeStreams.length > 0) || false;
+    showOptionalIncomeColumns = showOtherIncome;
+
+    updateChart(years, detResult, mcResult);
+    updateIncomeChart(years, detResult);
+    updateSummary(params, detResult, mcResult, {
+      bucketModelEnabled: bucketToggle ? bucketToggle.checked : false
+    });
+    updateResultsTable(years, detResult, mcResult, {
+      showOtherIncome
+    });
+    updateSavingsSuggestion(params, mcConfig, mcResult);
+  }
+
+  document.getElementById("runBtn").addEventListener("click", runSimulation);
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    resetToDefaults();
+    runSimulation();
+  });
+  downloadCsvBtn.addEventListener("click", downloadResultsCsv);
+
+  document.querySelectorAll("[data-stress]").forEach(btn => {
+    btn.addEventListener("click", () => runStressScenario(btn.dataset.stress));
+  });
+
+  document.getElementById("returnShift").addEventListener("input", () => {
+    updateSliderDisplays();
+  });
+  document.getElementById("inflationShift").addEventListener("input", () => {
+    updateSliderDisplays();
+  });
+  if (inflationPresetSelect) {
+    inflationPresetSelect.addEventListener("change", () => {
+      const preset = INFLATION_PRESETS.find(p => p.id === inflationPresetSelect.value);
+      if (!preset) {
+        resetInflationSelectionNote();
+        return;
+      }
+      const pct = typeof preset.compute === "function" ? preset.compute() : null;
+      if (Number.isFinite(pct)) {
+        setInflationInputPercent(pct, preset.label);
+        if (inflationYearSelect) inflationYearSelect.value = "";
+      } else {
+        resetInflationSelectionNote();
+      }
+    });
+  }
+  if (inflationYearSelect) {
+    inflationYearSelect.addEventListener("change", () => {
+      const year = parseInt(inflationYearSelect.value, 10);
+      const entry = HISTORICAL_INFLATION.find(item => item.year === year);
+      if (entry) {
+        setInflationInputPercent(entry.pct, `Historical ${year}`);
+        if (inflationPresetSelect) inflationPresetSelect.value = "custom";
+      } else {
+        resetInflationSelectionNote();
+      }
+    });
+  }
+  mcModeSelect.addEventListener("change", () => {
+    updateMCNormalFieldsVisibility();
+  });
+  if (ssToggle) {
+    ssToggle.addEventListener("change", updateIncomeStreamFields);
+  }
+  if (bucketToggle) {
+    bucketToggle.addEventListener("change", updateBucketFieldState);
+  }
+  if (goalListEl) {
+    goalListEl.addEventListener("click", event => {
+      const btn = event.target.closest(".goal-remove-btn");
+      if (btn) {
+        const row = btn.closest(".goal-row");
+        row?.remove();
+        if (!goalListEl.querySelector(".goal-row")) {
+          createGoalRow();
+        }
+      }
+    });
+  }
+  if (addGoalBtn) {
+    addGoalBtn.addEventListener("click", () => createGoalRow());
+  }
+
+  tabButtons.forEach(btn => btn.addEventListener("click", handleTabClick));
+
+  document.getElementById("saveScenarioBtn").addEventListener("click", handleSaveScenario);
+  document.getElementById("loadScenarioBtn").addEventListener("click", handleLoadScenario);
+  document.getElementById("deleteScenarioBtn").addEventListener("click", handleDeleteScenario);
+
+  window.addEventListener("load", () => {
+    updateSliderDisplays();
+    renderScenarioList();
+    resetToDefaults();
+    runSimulation();
+  });
+</script>
+</body>
+</html>
