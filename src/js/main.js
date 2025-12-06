@@ -1683,7 +1683,7 @@ function resetToDefaults() {
     incomeNeedBaseline: 200000,
     incomeNeedPct: 3.5,
     inflation: 3,
-    taxRate: 25,
+    taxRate: 18,
     numSims: 1000,
     mcMean: HISTORICAL_STATS.mean.toFixed(1),
     mcStdev: HISTORICAL_STATS.stdev.toFixed(1),
