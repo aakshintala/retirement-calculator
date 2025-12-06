@@ -17,7 +17,8 @@ import {
   runMonteCarlo,
   simulateDeterministic,
   estimateAdditionalAnnualSavings,
-  estimateAdditionalWorkYears
+  estimateAdditionalWorkYears,
+  estimateExtraAnnualSpending
 } from "./simulation.js";
 
 const ctx = document.getElementById("chart").getContext("2d");
@@ -25,6 +26,9 @@ const failScenarioCtx = document.getElementById("failScenarioChart")?.getContext
 const percentile10Ctx = document.getElementById("percentile10Chart").getContext("2d");
 const percentile50Ctx = document.getElementById("percentile50Chart").getContext("2d");
 const percentile90Ctx = document.getElementById("percentile90Chart").getContext("2d");
+const percentile10CoverageNote = document.getElementById("percentile10CoverageNote");
+const percentile50CoverageNote = document.getElementById("percentile50CoverageNote");
+const percentile90CoverageNote = document.getElementById("percentile90CoverageNote");
 const resultsTableBody = document.getElementById("resultsTableBody");
 const mcModeSelect = document.getElementById("mcMode");
 const mcNormalFields = document.querySelectorAll(".mc-normal-field");
@@ -60,6 +64,69 @@ let lastMcResult = null;
 let lastYears = [];
 let lastParams = null;
 
+function setCoverageNote(
+  noteEl,
+  coveragePath,
+  needPath,
+  actualIncomePath,
+  yearLabels,
+  retireAge,
+  percentileLabel
+) {
+  if (
+    !noteEl ||
+    !Array.isArray(coveragePath) ||
+    !Array.isArray(yearLabels) ||
+    !Array.isArray(needPath) ||
+    !Array.isArray(actualIncomePath)
+  )
+    return;
+  const totalRetirementYears = yearLabels.filter(age => age >= retireAge).length;
+  if (totalRetirementYears === 0) {
+    noteEl.textContent = "";
+    return;
+  }
+  const shortfalls = [];
+  const coveredYears = yearLabels.reduce((acc, age, idx) => {
+    if (age < retireAge) return acc;
+    const covered = Boolean(coveragePath[idx]);
+    const need = Number(needPath[idx]) || 0;
+    const actualIncome = Math.max(0, Number(actualIncomePath[idx]) || 0);
+    if (covered) {
+      // If covered is true, there is no shortfall, so skip
+      return acc + 1;
+    }
+    if (need <= 0) return acc;
+    // If not covered, calculate shortfall
+    const dollarShort = Math.max(0, need - actualIncome);
+    const shortPct = need > 0 ? Math.max(0, dollarShort / need) : 0;
+    // Always show shortfall if not covered, even if small
+    shortfalls.push({
+      age,
+      dollarShort,
+      shortPct
+    });
+    return acc;
+  }, 0);
+
+  const base = `${percentileLabel}: ${coveredYears} of ${totalRetirementYears} retirement years met 100% of inflated need.`;
+  if (!shortfalls.length) {
+    noteEl.textContent = base;
+    return;
+  }
+  const detail = shortfalls
+    .map(s => {
+      if (s.dollarShort < 1) {
+        return `age ${s.age}`;
+      }
+      const amountStr = fmtFullCurrency(s.dollarShort);
+      const pctStr = (s.shortPct * 100).toFixed(1);
+      return `age ${s.age} (short by ${amountStr}, ${pctStr}%)`;
+    })
+    .join("; ");
+  noteEl.innerHTML = `${base}<br>Shortfall years: ${detail}.`;
+}
+
 function resetInflationSelectionNote() {
   if (inflationSelectionNote) {
     inflationSelectionNote.textContent = defaultInflationNoteText;
@@ -81,6 +148,8 @@ function updateSavingsSuggestion(params, mcConfig, baseMcResult) {
   }
   const suggestion = estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, SAVINGS_TARGET_SUCCESS);
   const workSuggestion = estimateAdditionalWorkYears(params, mcConfig, baseMcResult, SAVINGS_TARGET_SUCCESS);
+  const spendingSuggestion = estimateExtraAnnualSpending(params, mcConfig, baseMcResult);
+  
   if (!suggestion) {
     savingsSuggestionEl.textContent = "Unable to compute a savings suggestion for these inputs.";
     return;
@@ -88,16 +157,17 @@ function updateSavingsSuggestion(params, mcConfig, baseMcResult) {
   const targetPct = (suggestion.target * 100).toFixed(0);
   const successPct = (suggestion.achievedSuccess * 100).toFixed(1);
   const maxBump = fmtFullCurrency(MAX_SAVINGS_SEARCH);
+  let msg = "";
+  
   if (suggestion.extraAnnual === 0) {
-    let msg = `<span class="badge">On track</span> Success probability is already ${successPct}%, clearing the ${targetPct}% goal.`;
+    msg = `<span class="badge">On track</span> Success probability is already ${successPct}%, clearing the ${targetPct}% goal.`;
     if (workSuggestion && workSuggestion.extraYears > 0) {
       const yearsText = workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
       const workPct = (workSuggestion.achievedSuccess * 100).toFixed(1);
       msg += ` Working ${yearsText} (retire age ${workSuggestion.retireAge}) would raise it further to ${workPct}%.`;
     }
-    savingsSuggestionEl.innerHTML = msg;
   } else if (suggestion.extraAnnual === null) {
-    let msg = `<span class="badge warn">Heads up</span> Even adding ${maxBump} per year kept success below ${targetPct}%.`;
+    msg = `<span class="badge warn">Heads up</span> Even adding ${maxBump} per year kept success below ${targetPct}%.`;
     if (workSuggestion && workSuggestion.extraYears) {
       const yearsText =
         workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
@@ -108,21 +178,35 @@ function updateSavingsSuggestion(params, mcConfig, baseMcResult) {
     } else {
       msg += " Consider changing retirement age, spending, or returns.";
     }
-    savingsSuggestionEl.innerHTML = msg;
   } else {
-    let msg = `Adding about ${fmtFullCurrency(suggestion.extraAnnual)} per year lifts success to ${successPct}% (target ${targetPct}%).`;
+    msg = `Adding about ${fmtFullCurrency(suggestion.extraAnnual)} per year lifts success to ${successPct}% (target ${targetPct}%).`;
     if (workSuggestion && workSuggestion.extraYears > 0) {
       const yearsText =
         workSuggestion.extraYears === 1 ? "1 extra year" : `${workSuggestion.extraYears} extra years`;
       const workPct = (workSuggestion.achievedSuccess * 100).toFixed(1);
       msg += ` Alternatively, working ${yearsText} (retire age ${workSuggestion.retireAge}) hits ${workPct}%.`;
     } else if (workSuggestion && workSuggestion.extraYears === 0) {
-      msg += " Working longer isn’t required for the 90% goal.";
+      msg += " Working longer isn't required for the 90% goal.";
     } else if (workSuggestion && workSuggestion.extraYears === null) {
       msg += ` Working up to ${MAX_EXTRA_WORK_YEARS} extra years stayed below ${targetPct}%.`;
     }
-    savingsSuggestionEl.innerHTML = msg;
   }
+  
+  // Add "die with zero" spending suggestion
+  if (spendingSuggestion && spendingSuggestion.extraAnnual > 0) {
+    const extraSpend = fmtFullCurrency(spendingSuggestion.extraAnnual);
+    const newTotal = fmtFullCurrency(spendingSuggestion.newTotalIncome);
+    const finalBal = fmtFullCurrency(Math.max(0, spendingSuggestion.medianFinalBalance));
+    msg += `<br><br><span class="badge info">Die with Zero</span> To spend down to ~$0 by age ${params.endAge}, you could spend an extra <strong>${extraSpend}/year</strong> (total ${newTotal}/year). Median final balance: ${finalBal}.`;
+    if (spendingSuggestion.successProb !== undefined) {
+      const spendSuccessPct = (spendingSuggestion.successProb * 100).toFixed(0);
+      msg += ` Success probability at that spending level: ${spendSuccessPct}%.`;
+    }
+  } else if (spendingSuggestion && spendingSuggestion.extraAnnual === 0) {
+    msg += `<br><br><span class="badge warn">Die with Zero</span> ${spendingSuggestion.message || "Current spending already depletes the portfolio."}`;
+  }
+  
+  savingsSuggestionEl.innerHTML = msg;
 }
 
 function populateInflationPresetSelect() {
@@ -366,6 +450,12 @@ function updateFailureScenarioChart(yearLabels, mcResult, currentAge, retireAge,
     const age = yearLabels[idx];
     return age < retireAge ? null : val;
   });
+  const pct = params?.incomeNeedPct || 0;
+  const pctWithdrawalData = (fp.balances || []).map((val, idx) => {
+    const age = yearLabels[idx];
+    if (age < retireAge) return null;
+    return (val ?? 0) * pct;
+  });
   const benchmarkSeriesRaw = fp.benchmarks || [];
   const benchmarkSeries = benchmarkSeriesRaw.map((val, idx) => {
     const age = yearLabels[idx];
@@ -405,7 +495,7 @@ function updateFailureScenarioChart(yearLabels, mcResult, currentAge, retireAge,
       yAxisID: "y"
     },
     {
-      label: "Withdrawal ($)",
+      label: "Actual withdrawal ($)",
       data: withdrawalData,
       borderWidth: 2,
       borderColor: "rgba(168, 85, 247, 1)",
@@ -413,6 +503,18 @@ function updateFailureScenarioChart(yearLabels, mcResult, currentAge, retireAge,
       tension: 0.15,
       fill: false,
       yAxisID: "y1",
+      spanGaps: true
+    },
+    {
+      label: "Safe-withdrawal (pct of balance)",
+      data: pctWithdrawalData,
+      borderWidth: 2,
+      borderColor: "rgba(107, 114, 128, 1)",
+      backgroundColor: "rgba(107, 114, 128, 0.08)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y1",
+      borderDash: [4, 4],
       spanGaps: true
     },
     params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
@@ -532,6 +634,13 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
     const age = yearLabels[idx];
     return age < retireAge ? null : val;
   });
+  const pct = params?.incomeNeedPct || 0;
+  const balSeries = mcResult.balancePaths?.p10 ?? mcResult.p10 ?? [];
+  const pctWithdrawalData = balSeries.map((val, idx) => {
+    const age = yearLabels[idx];
+    if (age < retireAge) return null;
+    return (val ?? 0) * pct;
+  });
   const benchmarkSeriesRaw = mcResult.benchmarks?.p10 || [];
   const benchmarkSeries = benchmarkSeriesRaw.map((val, idx) => {
     const age = yearLabels[idx];
@@ -543,6 +652,15 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
   // Find retirement start index for vertical line
   const retireIndex = yearLabels.findIndex(age => age >= retireAge);
   const retireAgeLabel = retireIndex >= 0 ? String(yearLabels[retireIndex]) : null;
+  setCoverageNote(
+    percentile10CoverageNote,
+    mcResult.coveragePaths?.p10 || [],
+    mcResult.spendingTargets?.p10 || [],
+    mcResult.actualIncomes?.p10 || [],
+    yearLabels,
+    retireAge,
+    "10th percentile"
+  );
   
   const datasets = [
     {
@@ -566,7 +684,7 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
       yAxisID: "y"
     },
     {
-      label: "Withdrawal ($)",
+      label: "Actual withdrawal ($)",
       data: withdrawalData,
       borderWidth: 2,
       borderColor: "rgba(168, 85, 247, 1)",
@@ -574,6 +692,18 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
       tension: 0.15,
       fill: false,
       yAxisID: "y1",
+      spanGaps: true
+    },
+    {
+      label: "Safe-withdrawal (pct of balance)",
+      data: pctWithdrawalData,
+      borderWidth: 2,
+      borderColor: "rgba(107, 114, 128, 1)",
+      backgroundColor: "rgba(107, 114, 128, 0.08)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y1",
+      borderDash: [4, 4],
       spanGaps: true
     },
     params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
@@ -593,8 +723,8 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
       label: "Balance ($)",
       data: mcResult.balancePaths?.p10 ?? mcResult.p10,
       borderWidth: 2,
-      borderColor: "rgba(239, 68, 68, 1)",
-      backgroundColor: "rgba(239, 68, 68, 0.1)",
+      borderColor: "rgba(21, 128, 61, 1)",
+      backgroundColor: "rgba(21, 128, 61, 0.1)",
       tension: 0.15,
       fill: false,
       yAxisID: "y1"
@@ -692,6 +822,13 @@ function updatePercentile50Chart(yearLabels, mcResult, currentAge, retireAge, pa
     const age = yearLabels[idx];
     return age < retireAge ? null : val;
   });
+  const pct = params?.incomeNeedPct || 0;
+  const balSeries = mcResult.balancePaths?.p50 ?? mcResult.p50 ?? [];
+  const pctWithdrawalData = balSeries.map((val, idx) => {
+    const age = yearLabels[idx];
+    if (age < retireAge) return null;
+    return (val ?? 0) * pct;
+  });
   const benchmarkSeriesRaw = mcResult.benchmarks?.p50 || [];
   const benchmarkSeries = benchmarkSeriesRaw.map((val, idx) => {
     const age = yearLabels[idx];
@@ -703,6 +840,15 @@ function updatePercentile50Chart(yearLabels, mcResult, currentAge, retireAge, pa
   // Find retirement start index for vertical line
   const retireIndex = yearLabels.findIndex(age => age >= retireAge);
   const retireAgeLabel = retireIndex >= 0 ? String(yearLabels[retireIndex]) : null;
+  setCoverageNote(
+    percentile50CoverageNote,
+    mcResult.coveragePaths?.p50 || [],
+    mcResult.spendingTargets?.p50 || [],
+    mcResult.actualIncomes?.p50 || [],
+    yearLabels,
+    retireAge,
+    "50th percentile"
+  );
   
   const datasets = [
     {
@@ -726,7 +872,7 @@ function updatePercentile50Chart(yearLabels, mcResult, currentAge, retireAge, pa
       yAxisID: "y"
     },
     {
-      label: "Withdrawal ($)",
+      label: "Actual withdrawal ($)",
       data: withdrawalData,
       borderWidth: 2,
       borderColor: "rgba(168, 85, 247, 1)",
@@ -734,6 +880,18 @@ function updatePercentile50Chart(yearLabels, mcResult, currentAge, retireAge, pa
       tension: 0.15,
       fill: false,
       yAxisID: "y1",
+      spanGaps: true
+    },
+    {
+      label: "Safe-withdrawal (pct of balance)",
+      data: pctWithdrawalData,
+      borderWidth: 2,
+      borderColor: "rgba(107, 114, 128, 1)",
+      backgroundColor: "rgba(107, 114, 128, 0.08)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y1",
+      borderDash: [4, 4],
       spanGaps: true
     },
     params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
@@ -852,6 +1010,13 @@ function updatePercentile90Chart(yearLabels, mcResult, currentAge, retireAge, pa
     const age = yearLabels[idx];
     return age < retireAge ? null : val;
   });
+  const pct = params?.incomeNeedPct || 0;
+  const balSeries = mcResult.balancePaths?.p90 ?? mcResult.p90 ?? [];
+  const pctWithdrawalData = balSeries.map((val, idx) => {
+    const age = yearLabels[idx];
+    if (age < retireAge) return null;
+    return (val ?? 0) * pct;
+  });
   const benchmarkSeriesRaw = mcResult.benchmarks?.p90 || [];
   const benchmarkSeries = benchmarkSeriesRaw.map((val, idx) => {
     const age = yearLabels[idx];
@@ -863,6 +1028,15 @@ function updatePercentile90Chart(yearLabels, mcResult, currentAge, retireAge, pa
   // Find retirement start index for vertical line
   const retireIndex = yearLabels.findIndex(age => age >= retireAge);
   const retireAgeLabel = retireIndex >= 0 ? String(yearLabels[retireIndex]) : null;
+  setCoverageNote(
+    percentile90CoverageNote,
+    mcResult.coveragePaths?.p90 || [],
+    mcResult.spendingTargets?.p90 || [],
+    mcResult.actualIncomes?.p90 || [],
+    yearLabels,
+    retireAge,
+    "90th percentile"
+  );
   
   const datasets = [
     {
@@ -886,7 +1060,7 @@ function updatePercentile90Chart(yearLabels, mcResult, currentAge, retireAge, pa
       yAxisID: "y"
     },
     {
-      label: "Withdrawal ($)",
+      label: "Actual withdrawal ($)",
       data: withdrawalData,
       borderWidth: 2,
       borderColor: "rgba(168, 85, 247, 1)",
@@ -894,6 +1068,18 @@ function updatePercentile90Chart(yearLabels, mcResult, currentAge, retireAge, pa
       tension: 0.15,
       fill: false,
       yAxisID: "y1",
+      spanGaps: true
+    },
+    {
+      label: "Safe-withdrawal (pct of balance)",
+      data: pctWithdrawalData,
+      borderWidth: 2,
+      borderColor: "rgba(107, 114, 128, 1)",
+      backgroundColor: "rgba(107, 114, 128, 0.08)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y1",
+      borderDash: [4, 4],
       spanGaps: true
     },
     params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
@@ -1010,6 +1196,9 @@ function updateResultsTable(yearLabels, mcResult, params) {
   const pct = params?.incomeNeedPct || 0;
   const inflationRate = params?.inflation || 0;
   const baselineNeed = params?.incomeNeedBaseline || params?.incomeNeed || 0;
+  const pathBal10 = mcResult.balancePaths?.p10 || [];
+  const pathBal50 = mcResult.balancePaths?.p50 || [];
+  const pathBal90 = mcResult.balancePaths?.p90 || [];
 
   yearLabels.forEach((age, idx) => {
     const yearsFromToday = age - (params?.currentAge || age);
@@ -1017,9 +1206,12 @@ function updateResultsTable(yearLabels, mcResult, params) {
     const inflatedBaseline = isRetired
       ? baselineNeed * Math.pow(1 + inflationRate, Math.max(0, yearsFromToday))
       : 0;
-    const swr10 = isRetired ? (mcResult.p10[idx] ?? 0) * pct : 0;
-    const swr50 = isRetired ? (mcResult.p50[idx] ?? 0) * pct : 0;
-    const swr90 = isRetired ? (mcResult.p90[idx] ?? 0) * pct : 0;
+    const bal10 = pathBal10[idx] ?? mcResult.p10[idx] ?? 0;
+    const swr10 = isRetired ? bal10 * pct : 0;
+    const bal50 = pathBal50[idx] ?? mcResult.p50[idx] ?? 0;
+    const swr50 = isRetired ? bal50 * pct : 0;
+    const bal90 = pathBal90[idx] ?? mcResult.p90[idx] ?? 0;
+    const swr90 = isRetired ? bal90 * pct : 0;
     const formatSWR = value => {
       if (!isRetired || inflatedBaseline <= 0) return fmtFullCurrency(value);
       const indicator = value > inflatedBaseline ? "✅" : "❌";
@@ -1030,11 +1222,11 @@ function updateResultsTable(yearLabels, mcResult, params) {
     const cellConfigs = [
       { value: age.toString() },
       { value: fmtFullCurrency(inflatedBaseline), key: "inflatedNeed" },
-      { value: fmtFullCurrency(mcResult.p10[idx] ?? 0) },
+      { value: fmtFullCurrency(bal10) },
       { value: formatSWR(swr10) },
-      { value: fmtFullCurrency(mcResult.p50[idx] ?? 0) },
+      { value: fmtFullCurrency(bal50) },
       { value: formatSWR(swr50) },
-      { value: fmtFullCurrency(mcResult.p90[idx] ?? 0) },
+      { value: fmtFullCurrency(bal90) },
       { value: formatSWR(swr90) }
     ];
     cellConfigs.filter(Boolean).forEach(cell => {
@@ -1075,7 +1267,10 @@ function updateSummary(params, mcResult) {
   addRow("Monte Carlo median final balance", fmtFullCurrency(mcMedianFinal));
   addRow("Monte Carlo 10th %ile final balance", fmtFullCurrency(mcP10Final));
   addRow("Monte Carlo 90th %ile final balance", fmtFullCurrency(mcP90Final));
-  addRow("Probability of not running out of money", (mcResult.successProb * 100).toFixed(1) + "%");
+  addRow(
+    "Probability of meeting 100% of need",
+    (mcResult.successProb * 100).toFixed(1) + "%"
+  );
   addRow("Lowest annual income coverage (MC)", (minCoverage * 100).toFixed(0) + "%");
 
   const successProbPct = mcResult.successProb * 100;

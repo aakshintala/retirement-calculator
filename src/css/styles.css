@@ -372,6 +372,11 @@ button.secondary {
   color: #b91c1c;
   border-color: #fecaca;
 }
+.info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
 .small {
   font-size: 0.75rem;
   color: #6b7280;

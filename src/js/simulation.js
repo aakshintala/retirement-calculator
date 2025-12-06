@@ -13,9 +13,13 @@ import {
   SAVINGS_TARGET_SUCCESS,
   MAX_SAVINGS_SEARCH,
   SAVINGS_MIN_INCREMENT,
-  MAX_EXTRA_WORK_YEARS
+  MAX_EXTRA_WORK_YEARS,
+  MAX_EXTRA_SPENDING_SEARCH,
+  SPENDING_MIN_INCREMENT
 } from "./data.js";
 import { clamp, percentile } from "./utils.js";
+
+const DEFAULT_MIN_INCOME_COVERAGE = 1;
 
 function buildSavingsSuggestionConfig(mcConfig) {
   if (!mcConfig) return null;
@@ -56,7 +60,6 @@ function estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, target 
   };
 
   let lowExtra = 0;
-  let lowSuccess = baseSuccess;
   let highExtra = 0;
   let highSuccess = baseSuccess;
   let guard = 0;
@@ -90,7 +93,6 @@ function estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, target 
       highSuccess = midSuccess;
     } else {
       lowExtra = midExtra;
-      lowSuccess = midSuccess;
     }
   }
 
@@ -170,6 +172,136 @@ function estimateAdditionalWorkYears(params, mcConfig, baseMcResult, target = SA
   };
 }
 
+/**
+ * Estimates how much extra annual spending (in today's dollars) would result in
+ * the median simulation ending at approximately $0 at the plan end age.
+ * This is useful for "die with zero" style planning.
+ * 
+ * @param {Object} params - The retirement parameters
+ * @param {Object} mcConfig - Monte Carlo configuration
+ * @param {Object} baseMcResult - Result from initial Monte Carlo run
+ * @returns {Object|null} { extraAnnual, medianFinalBalance, newTotalIncome }
+ */
+function estimateExtraAnnualSpending(params, mcConfig, baseMcResult) {
+  if (!params || !mcConfig || !baseMcResult) return null;
+  
+  const sortedFinalBalances = [...baseMcResult.finalBalances].sort((a, b) => a - b);
+  const baseMedianFinal = sortedFinalBalances[Math.floor(sortedFinalBalances.length * 0.5)];
+  const baseIncomeNeed = params.incomeNeed;
+  
+  if (!Number.isFinite(baseMedianFinal) || !Number.isFinite(baseIncomeNeed)) return null;
+  
+  // If median final balance is already 0 or negative, can't spend more
+  if (baseMedianFinal <= 0) {
+    return {
+      extraAnnual: 0,
+      medianFinalBalance: baseMedianFinal,
+      newTotalIncome: baseIncomeNeed,
+      message: "Median balance already depleted at plan end."
+    };
+  }
+  
+  const suggestionConfig = buildSavingsSuggestionConfig(mcConfig);
+  if (!suggestionConfig) return null;
+  
+  const cache = new Map();
+  const maxExtra = MAX_EXTRA_SPENDING_SEARCH;
+  
+  const runTrial = extra => {
+    const safeExtra = Math.max(0, extra);
+    const key = safeExtra.toFixed(2);
+    if (cache.has(key)) return cache.get(key);
+    
+    // Increase income need (spending) by the extra amount
+    const trialParams = { 
+      ...params, 
+      incomeNeed: Math.max(0, baseIncomeNeed + safeExtra),
+      incomeNeedBaseline: Math.max(0, (params.incomeNeedBaseline || baseIncomeNeed) + safeExtra)
+    };
+    const trialResult = runMonteCarlo(trialParams, suggestionConfig);
+    const trialSorted = [...trialResult.finalBalances].sort((a, b) => a - b);
+    const medianFinal = trialSorted[Math.floor(trialSorted.length * 0.5)];
+    cache.set(key, { medianFinal, successProb: trialResult.successProb });
+    return { medianFinal, successProb: trialResult.successProb };
+  };
+  
+  // Binary search to find extra spending that brings median final balance close to 0
+  // Target: median final balance between 0 and a small positive threshold
+  const targetThreshold = baseIncomeNeed * 0.5; // Allow up to 0.5x income need as "close to zero"
+  
+  let lowExtra = 0;
+  let highExtra = 0;
+  let highResult = { medianFinal: baseMedianFinal };
+  let guard = 0;
+  
+  // First, find an upper bound where median goes to 0 or negative
+  while (highExtra < maxExtra && highResult.medianFinal > targetThreshold && guard < 12) {
+    highExtra = highExtra === 0 ? 10000 : highExtra * 2;
+    if (highExtra > maxExtra) highExtra = maxExtra;
+    highResult = runTrial(highExtra);
+    guard += 1;
+    if (highResult.medianFinal <= 0) break;
+    if (highExtra >= maxExtra) break;
+  }
+  
+  // If even max extra spending doesn't deplete portfolio, return max
+  if (highResult.medianFinal > targetThreshold) {
+    return {
+      extraAnnual: maxExtra,
+      medianFinalBalance: highResult.medianFinal,
+      newTotalIncome: baseIncomeNeed + maxExtra,
+      successProb: highResult.successProb,
+      message: `Even adding ${maxExtra.toLocaleString()} per year leaves median balance positive.`
+    };
+  }
+  
+  // Binary search to find the sweet spot
+  let bestExtra = highExtra;
+  let bestResult = highResult;
+  
+  for (let i = 0; i < 14; i++) {
+    if (highExtra - lowExtra < SPENDING_MIN_INCREMENT) break;
+    const midExtra = (lowExtra + highExtra) / 2;
+    const midResult = runTrial(midExtra);
+    
+    if (midResult.medianFinal <= 0) {
+      // Too much spending - reduce
+      highExtra = midExtra;
+      highResult = midResult;
+    } else if (midResult.medianFinal > targetThreshold) {
+      // Not enough spending - increase
+      lowExtra = midExtra;
+    } else {
+      // In the sweet spot (0 < median <= threshold)
+      bestExtra = midExtra;
+      bestResult = midResult;
+      break;
+    }
+    
+    // Track the best result that keeps median just above 0
+    if (midResult.medianFinal > 0 && midResult.medianFinal <= targetThreshold) {
+      bestExtra = midExtra;
+      bestResult = midResult;
+    }
+  }
+  
+  // If we haven't found a sweet spot, use the lower bound (safer)
+  if (bestResult.medianFinal <= 0 && lowExtra > 0) {
+    bestExtra = lowExtra;
+    bestResult = runTrial(lowExtra);
+  }
+  
+  const roundedExtra = Math.max(0, Math.floor(bestExtra / SPENDING_MIN_INCREMENT) * SPENDING_MIN_INCREMENT);
+  const finalResult = runTrial(roundedExtra);
+  
+  return {
+    extraAnnual: roundedExtra,
+    medianFinalBalance: finalResult.medianFinal,
+    newTotalIncome: baseIncomeNeed + roundedExtra,
+    successProb: finalResult.successProb
+  };
+}
+
 function withdrawFromBalance(balance, amount) {
   if (!Number.isFinite(amount) || amount <= 0) {
     return { balance, shortage: 0, withdrawn: 0 };
@@ -201,13 +333,6 @@ function withdrawFromBonds(bondReserve, amount) {
   const withdrawn = Math.min(bondReserve, amount);
   return { withdrawn, remaining: amount - withdrawn };
 }
-
-function refillBondReserve(bondReserve, targetReserve, availableFromStocks) {
-  const shortfall = Math.max(0, targetReserve - bondReserve);
-  const refillAmount = Math.min(shortfall, availableFromStocks);
-  return Math.max(0, refillAmount);
-}
-
 
 function sampleRegimeFromFrequencies(frequencies) {
   const r = Math.random();
@@ -440,7 +565,7 @@ function simulateDeterministic(params, opts = {}) {
   };
 }
 
-function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
+function simulateOneMCPath(params, mcConfig, historicalSequencerFactory, minIncomeCoverage) {
   let balance = params.currentSavings;
   let age = params.currentAge;
   const balances = [];
@@ -451,7 +576,16 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
   const balanceRates = [];
   const incomeBenchmarks = [];
   const spendingTargets = [];
+  const actualAfterTaxIncomes = [];
   const spendingState = { prev: null };
+  const coverageFull = [];
+  const coverageRatios = [];
+  const coverageFloor = clamp(
+    Number.isFinite(minIncomeCoverage) ? minIncomeCoverage : DEFAULT_MIN_INCOME_COVERAGE,
+    0,
+    1
+  );
+  let pathMinCoverage = 1;
   let cumulativeInflationFactor = 1;
   const useHistoricalInflation = params.inflationMode === "historical";
   const useSequencer =
@@ -470,6 +604,7 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
     const balanceAtStartOfYear = totalPortfolio(balance, bondReserve);
     balances.push(balanceAtStartOfYear);
     let coverageMet = true;
+    let coverageRatio = 1;
     const yearOffset = age - params.currentAge;
     let inflationOverride = params.inflation;
 
@@ -517,6 +652,7 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
       }
       incomeBenchmarks.push(0);
       spendingTargets.push(0);
+      actualAfterTaxIncomes.push(0);
     } else {
       // Initialize bond reserve at start of retirement
       // Note: Moving money from stocks to bonds reduces expected returns but protects against
@@ -619,6 +755,13 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
         }
       }
 
+      const totalAfterTaxIncome = otherIncome + actualSpendingWithdrawal * params.afterTaxFactor;
+      coverageRatio = fixedInflated > 0 ? totalAfterTaxIncome / fixedInflated : 1;
+      if (coverageRatio + 1e-9 < coverageFloor) {
+        coverageMet = false;
+      }
+      actualAfterTaxIncomes.push(totalAfterTaxIncome);
+
       // Total withdrawal is what was actually taken for goals plus spending,
       // not any market-driven balance change.
       totalWithdrawal = actualGoalWithdrawal + actualSpendingWithdrawal;
@@ -635,21 +778,35 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
     withdrawals.push(totalWithdrawal);
     balanceRates.push(balanceRate * 100); // Store as percentage
 
-    coverage.push(coverageMet);
+    const metFullNeed = coverageMet && coverageRatio >= 1 - 1e-9;
+    coverageFull.push(metFullNeed);
+    coverage.push(metFullNeed);
+    coverageRatios.push(Math.max(0, coverageRatio));
+    const effectiveCoverageRatio = coverageMet ? coverageRatio : Math.min(coverageRatio, 0);
+    pathMinCoverage = Math.min(pathMinCoverage, effectiveCoverageRatio);
 
     // If the portfolio is depleted, stop the simulation and fill the
     // remaining years with zeros to avoid phantom withdrawals/balances.
     if (balanceAtEndOfYear <= 1e-6) {
       const remainingYears = params.endAge - age;
+      const lastTarget = spendingTargets[spendingTargets.length - 1] || 0;
+      const assumedInflation = Number.isFinite(inflationOverride) ? inflationOverride : params.inflation || 0;
+      let futureNeed = lastTarget;
       for (let i = 0; i < remainingYears; i++) {
+        // Carry forward the last known need with steady inflation so we can
+        // surface shortfall amounts in the UI after depletion.
+        futureNeed *= 1 + assumedInflation;
         balances.push(0);
         coverage.push(false);
+        coverageFull.push(false);
+        coverageRatios.push(0);
         returns.push(0);
-        inflations.push(0);
+        inflations.push(assumedInflation * 100);
         withdrawals.push(0);
         balanceRates.push(0);
         incomeBenchmarks.push(0);
-        spendingTargets.push(0);
+        spendingTargets.push(futureNeed);
+        actualAfterTaxIncomes.push(0);
       }
       break;
     }
@@ -668,11 +825,20 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory) {
     withdrawals,
     balanceRates,
     incomeBenchmarks,
-    spendingTargets
+    spendingTargets,
+    actualAfterTaxIncomes,
+    coverageFull,
+    coverageRatios,
+    minCoverageRatio: pathMinCoverage
   };
 }
 
 function runMonteCarlo(params, mcConfig) {
+  const minIncomeCoverage = clamp(
+    Number.isFinite(params?.minIncomeCoverage) ? params.minIncomeCoverage : DEFAULT_MIN_INCOME_COVERAGE,
+    0,
+    1
+  );
   const horizonYears = params.endAge - params.currentAge + 1;
   const paths = [];
   const returnPaths = [];
@@ -681,9 +847,12 @@ function runMonteCarlo(params, mcConfig) {
   const balanceRatePaths = [];
   const benchmarkPaths = [];
   const spendingTargetPaths = [];
+  const actualIncomePaths = [];
+  const coverageRatioPaths = [];
   const finalBalances = [];
   const successFlags = [];
   const coverageCounts = new Array(horizonYears).fill(0);
+  const coverageFullPaths = [];
   const useModernEra = mcConfig.mode === "historical_regime_markov_1980";
   const historicalSequencerFactory =
     mcConfig.mode === "historical_regime_markov" || mcConfig.mode === "historical_regime_markov_1980"
@@ -699,11 +868,16 @@ function runMonteCarlo(params, mcConfig) {
       withdrawals,
       balanceRates,
       incomeBenchmarks,
-      spendingTargets
+      spendingTargets,
+      actualAfterTaxIncomes,
+      coverageFull,
+      coverageRatios,
+      minCoverageRatio
     } = simulateOneMCPath(
       params,
       mcConfig,
-      historicalSequencerFactory
+      historicalSequencerFactory,
+      minIncomeCoverage
     );
     paths.push(balances);
     returnPaths.push(returns);
@@ -712,9 +886,12 @@ function runMonteCarlo(params, mcConfig) {
     balanceRatePaths.push(balanceRates);
     benchmarkPaths.push(incomeBenchmarks);
     spendingTargetPaths.push(spendingTargets);
+    actualIncomePaths.push(actualAfterTaxIncomes);
+    coverageRatioPaths.push(coverageRatios);
     finalBalances.push(balances[balances.length - 1]);
-    successFlags.push(balances[balances.length - 1] > 0);
-    coverage.forEach((flag, idx) => {
+    coverageFullPaths.push(coverageFull);
+    successFlags.push(minCoverageRatio >= 1 - 1e-9);
+    coverageFull.forEach((flag, idx) => {
       if (flag) coverageCounts[idx] += 1;
     });
   }
@@ -791,6 +968,24 @@ function runMonteCarlo(params, mcConfig) {
     p90: spendingTargetPaths[p90PathIndex] ? [...spendingTargetPaths[p90PathIndex]] : []
   };
 
+  const sortedActualIncomes = {
+    p10: actualIncomePaths[p10PathIndex] ? [...actualIncomePaths[p10PathIndex]] : [],
+    p50: actualIncomePaths[p50PathIndex] ? [...actualIncomePaths[p50PathIndex]] : [],
+    p90: actualIncomePaths[p90PathIndex] ? [...actualIncomePaths[p90PathIndex]] : []
+  };
+
+  const sortedCoverageFull = {
+    p10: coverageFullPaths[p10PathIndex] ? [...coverageFullPaths[p10PathIndex]] : [],
+    p50: coverageFullPaths[p50PathIndex] ? [...coverageFullPaths[p50PathIndex]] : [],
+    p90: coverageFullPaths[p90PathIndex] ? [...coverageFullPaths[p90PathIndex]] : []
+  };
+
+  const sortedCoverageRatios = {
+    p10: coverageRatioPaths[p10PathIndex] ? [...coverageRatioPaths[p10PathIndex]] : [],
+    p50: coverageRatioPaths[p50PathIndex] ? [...coverageRatioPaths[p50PathIndex]] : [],
+    p90: coverageRatioPaths[p90PathIndex] ? [...coverageRatioPaths[p90PathIndex]] : []
+  };
+
   // Also compute balance percentiles at each time step for the main chart (to maintain consistency)
   // But for the percentile scenario charts, we use the complete paths above
   const balancePercentilesByTime = {
@@ -826,8 +1021,12 @@ function runMonteCarlo(params, mcConfig) {
     balanceRates: sortedBalanceRates,
     benchmarks: sortedBenchmarks,
     spendingTargets: sortedSpendingTargets,
+    actualIncomes: sortedActualIncomes,
     balancePaths: sortedBalances,
-    failurePath
+    coveragePaths: sortedCoverageFull,
+    coverageRatios: sortedCoverageRatios,
+    failurePath,
+    minIncomeCoverage
   };
 }
 
@@ -835,6 +1034,7 @@ export {
   buildSavingsSuggestionConfig,
   estimateAdditionalAnnualSavings,
   estimateAdditionalWorkYears,
+  estimateExtraAnnualSpending,
   simulateDeterministic,
   runMonteCarlo,
   sampleRegimeFromTransition

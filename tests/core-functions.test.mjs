@@ -223,6 +223,31 @@ describe("runMonteCarlo aggregation", () => {
     restore();
   });
 
+  test("treats deep spending shortfall as failure even with pct withdrawals", () => {
+    const restore = useDeterministicRandom([0.5, 0.6]);
+    const params = baseParams({
+      currentAge: 65,
+      retireAge: 65,
+      endAge: 65,
+      annualContrib: 0,
+      currentSavings: 1000,
+      incomeNeed: 100000,
+      incomeNeedBaseline: 100000,
+      incomeNeedMode: "portfolio_pct",
+      incomeNeedPct: 0.035,
+      preRetReturn: 0,
+      postRetReturn: 0,
+      inflation: 0,
+      taxRate: 0,
+      afterTaxFactor: 1
+    });
+    const mcConfig = mc({ numSims: 1, mean: 0, stdev: 0 });
+    const res = runMonteCarlo(params, mcConfig);
+    assert.equal(res.successProb, 0);
+    assert.ok(Math.min(...res.coverageProb) < 0.75);
+    restore();
+  });
+
   test("captures failure path and zero coverage when spending overwhelms balance", () => {
     const restore = useDeterministicRandom([0.6, 0.7, 0.8, 0.9]);
     const params = baseParams({

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Background circle -->
+  <circle cx="50" cy="50" r="45" fill="#2563eb"/>
+  
+  <!-- Dollar sign -->
+  <text x="50" y="70" font-family="Arial, sans-serif" font-size="60" font-weight="bold" fill="white" text-anchor="middle">$</text>
+  
+  <!-- Chart line accent -->
+  <polyline points="20,40 30,35 40,30 50,25 60,30 70,35 80,40" 
+            stroke="white" 
+            stroke-width="3" 
+            fill="none" 
+            stroke-linecap="round" 
+            stroke-linejoin="round" 
+            opacity="0.8"/>
+</svg>
+
