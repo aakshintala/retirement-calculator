@@ -32,7 +32,6 @@ const percentile90CoverageNote = document.getElementById("percentile90CoverageNo
 const resultsTableBody = document.getElementById("resultsTableBody");
 const mcModeSelect = document.getElementById("mcMode");
 const mcNormalFields = document.querySelectorAll(".mc-normal-field");
-const ssToggle = document.getElementById("ssEnabled");
 const downloadCsvBtn = document.getElementById("downloadCsvBtn");
 const bondTentingToggle = document.getElementById("bondTentingEnabled");
 const goalListEl = document.getElementById("goalList");
@@ -63,6 +62,283 @@ let percentile90Chart;
 let lastMcResult = null;
 let lastYears = [];
 let lastParams = null;
+
+// Simulations tab state
+let simResults = [];
+let currentSimPage = 1;
+const simsPerPage = 1000;
+let simSortMode = "minCoverageRatio";
+let selectedSimChart = null;
+let balanceBoxplotChart = null;
+
+function renderYearlyBoxplotChart({
+  canvasId,
+  noteId,
+  yearLabels,
+  stats,
+  sliceFromRetirement = false,
+  params,
+  yTickFormatter,
+  tooltipFormatter,
+  baselineValue = null,
+  ySuggestedMin = null,
+  ySuggestedMax = null
+}) {
+  const canvas = document.getElementById(canvasId);
+  const noteEl = noteId ? document.getElementById(noteId) : null;
+  if (!canvas) return null;
+
+  if (!Array.isArray(stats) || !stats.some(Boolean) || !Array.isArray(yearLabels) || yearLabels.length === 0) {
+    canvas.style.display = "none";
+    if (noteEl) noteEl.style.display = "none";
+    return null;
+  }
+
+  canvas.style.display = "";
+  if (noteEl) noteEl.style.display = "";
+
+  const retirementStartIdx =
+    sliceFromRetirement && params && Number.isFinite(params.retireAge) && Number.isFinite(params.currentAge)
+      ? Math.max(0, Math.min(yearLabels.length, params.retireAge - params.currentAge))
+      : 0;
+  const slicedStats = stats.slice(retirementStartIdx);
+  const labels = yearLabels.slice(retirementStartIdx).map(String);
+
+  const boxplotPlugin = {
+    id: `${canvasId}-boxplotPlugin`,
+    afterDatasetsDraw(chart, _args, pluginOpts) {
+      const chartStats = pluginOpts?.stats;
+      if (!Array.isArray(chartStats) || !chartStats.length) return;
+      const { ctx, chartArea, scales } = chart;
+      const x = scales.x;
+      const y = scales.y;
+      if (!x || !y) return;
+
+      const getX = idx => {
+        let px = typeof x.getPixelForValue === "function" ? x.getPixelForValue(idx) : NaN;
+        if (!Number.isFinite(px) && typeof x.getPixelForTick === "function") {
+          const ticksLen = Array.isArray(x.ticks) ? x.ticks.length : 0;
+          const tickIdx = ticksLen ? Math.min(Math.max(0, idx), ticksLen - 1) : 0;
+          px = x.getPixelForTick(tickIdx);
+        }
+        return px;
+      };
+
+      const first = getX(0);
+      const second = getX(Math.min(1, labels.length - 1));
+      const step = Number.isFinite(second - first) && labels.length > 1
+        ? Math.abs(second - first)
+        : (chartArea.right - chartArea.left) / Math.max(1, labels.length);
+      const boxHalf = Math.max(3, Math.min(14, step * 0.22));
+
+      ctx.save();
+
+      // Optional baseline (e.g. 0% returns, 100% coverage)
+      if (baselineValue !== null && baselineValue !== undefined && Number.isFinite(Number(baselineValue))) {
+        const yBase = y.getPixelForValue(Number(baselineValue));
+        ctx.strokeStyle = "rgba(107, 114, 128, 0.55)";
+        ctx.setLineDash([4, 4]);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(chartArea.left, yBase);
+        ctx.lineTo(chartArea.right, yBase);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(30, 41, 59, 0.9)";
+      ctx.fillStyle = "rgba(59, 130, 246, 0.18)";
+      const outlierFill = "rgba(30, 41, 59, 0.65)";
+      const outlierRadius = 1.8;
+
+      for (let i = 0; i < chartStats.length && i < labels.length; i++) {
+        const s = chartStats[i];
+        if (!s) continue;
+
+        const q1 = Number(s.q1);
+        const med = Number(s.median);
+        const q3 = Number(s.q3);
+        const whiskerLow = Number.isFinite(Number(s.whiskerLow)) ? Number(s.whiskerLow) : Number(s.min);
+        const whiskerHigh = Number.isFinite(Number(s.whiskerHigh)) ? Number(s.whiskerHigh) : Number(s.max);
+        if (![q1, med, q3, whiskerLow, whiskerHigh].every(Number.isFinite)) continue;
+
+        const iqr = q3 - q1;
+        const collapsed = Math.abs(iqr) < 1e-6;
+
+        const xC = getX(i);
+        if (!Number.isFinite(xC)) continue;
+
+        const yLow = y.getPixelForValue(whiskerLow);
+        const yQ1 = y.getPixelForValue(q1);
+        const yMed = y.getPixelForValue(med);
+        const yQ3 = y.getPixelForValue(q3);
+        const yHigh = y.getPixelForValue(whiskerHigh);
+
+        // Whisker line
+        ctx.beginPath();
+        ctx.moveTo(xC, yLow);
+        ctx.lineTo(xC, yHigh);
+        ctx.stroke();
+
+        // Caps
+        ctx.beginPath();
+        ctx.moveTo(xC - boxHalf, yLow);
+        ctx.lineTo(xC + boxHalf, yLow);
+        ctx.moveTo(xC - boxHalf, yHigh);
+        ctx.lineTo(xC + boxHalf, yHigh);
+        ctx.stroke();
+
+        // Box (q1..q3)
+        const boxTop = Math.min(yQ1, yQ3);
+        const boxBottom = Math.max(yQ1, yQ3);
+        const boxH = Math.max(2, boxBottom - boxTop);
+        ctx.fillRect(xC - boxHalf, boxTop, boxHalf * 2, boxH);
+        ctx.strokeRect(xC - boxHalf, boxTop, boxHalf * 2, boxH);
+
+        // Median
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(xC - boxHalf, yMed);
+        ctx.lineTo(xC + boxHalf, yMed);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+
+        // Outliers (sampled + jittered)
+        const outliers = Array.isArray(s.outliers) ? s.outliers : [];
+        if (outliers.length) {
+          ctx.fillStyle = outlierFill;
+          const maxOutliersToDraw = collapsed ? 10 : 18;
+          const stepOut = Math.max(1, Math.ceil(outliers.length / maxOutliersToDraw));
+          for (let oi = 0; oi < outliers.length; oi += stepOut) {
+            const ov = Number(outliers[oi]);
+            if (!Number.isFinite(ov)) continue;
+            const oy = y.getPixelForValue(ov);
+            const seed = (i + 1) * 1000003 + (oi + 1) * 9176;
+            const raw = (Math.sin(seed) * 10000) % 1;
+            const frac = (raw + 1) % 1;
+            const jitter = (frac - 0.5) * boxHalf * 1.2;
+            ctx.beginPath();
+            ctx.arc(xC + jitter, oy, outlierRadius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.fillStyle = "rgba(59, 130, 246, 0.18)";
+        }
+      }
+
+      ctx.restore();
+    }
+  };
+
+  const ctx = canvas.getContext("2d");
+
+  const defaultTick = v => (Number.isFinite(Number(v)) ? String(v) : "");
+  const tickFmt = typeof yTickFormatter === "function" ? yTickFormatter : defaultTick;
+
+  // Transparent dataset to provide scale + tooltip anchor points.
+  const medians = slicedStats.map(s => (s ? s.median : null));
+
+  const options = {
+    responsive: true,
+    interaction: { mode: "nearest", intersect: false },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          title: items => {
+            const idx = items?.[0]?.dataIndex;
+            const age = labels?.[idx];
+            return age ? `Age ${age}` : "Age";
+          },
+          label: ctx => {
+            const i = ctx.dataIndex;
+            const s = slicedStats[i];
+            if (!s) return null;
+            if (typeof tooltipFormatter === "function") return tooltipFormatter(s);
+            return [
+              `whisker low: ${s.whiskerLow ?? s.min}`,
+              `q1: ${s.q1}`,
+              `median: ${s.median}`,
+              `q3: ${s.q3}`,
+              `whisker high: ${s.whiskerHigh ?? s.max}`,
+              Array.isArray(s.outliers) && s.outliers.length ? `outliers: ${s.outliers.length} (sampled)` : null
+            ];
+          }
+        }
+      },
+      [boxplotPlugin.id]: { stats: slicedStats }
+    },
+    scales: {
+      x: { ticks: { autoSkip: true, maxTicksLimit: 14 } },
+      y: {
+        beginAtZero: false,
+        suggestedMin: ySuggestedMin,
+        suggestedMax: ySuggestedMax,
+        ticks: { callback: val => tickFmt(val) }
+      }
+    }
+  };
+
+  return new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Median",
+          data: medians,
+          borderColor: "rgba(0,0,0,0)",
+          backgroundColor: "rgba(0,0,0,0)",
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          showLine: false,
+          spanGaps: true
+        }
+      ]
+    },
+    options,
+    plugins: [boxplotPlugin]
+  });
+}
+
+function renderBalanceBoxplot(yearLabels, mcResult) {
+  if (balanceBoxplotChart) {
+    balanceBoxplotChart.destroy();
+    balanceBoxplotChart = null;
+  }
+  const stats = mcResult?.balanceBoxplots;
+  if (!Array.isArray(stats)) return;
+  const highs = stats
+    .filter(Boolean)
+    .map(s => Number.isFinite(Number(s.whiskerHigh)) ? Number(s.whiskerHigh) : Number(s.max))
+    .filter(Number.isFinite);
+  const hi = highs.length ? Math.max(...highs) : 0;
+  balanceBoxplotChart = renderYearlyBoxplotChart({
+    canvasId: "balanceBoxplotChart",
+    noteId: "balanceBoxplotNote",
+    yearLabels,
+    stats,
+    sliceFromRetirement: false,
+    params: null,
+    baselineValue: null,
+    ySuggestedMin: 0,
+    ySuggestedMax: hi > 0 ? hi * 1.1 : null,
+    yTickFormatter: v => fmtCurrency(Number(v)),
+    tooltipFormatter: s => {
+      const low = Number.isFinite(Number(s.whiskerLow)) ? s.whiskerLow : s.min;
+      const high = Number.isFinite(Number(s.whiskerHigh)) ? s.whiskerHigh : s.max;
+      const outCount = Array.isArray(s.outliers) ? s.outliers.length : 0;
+      return [
+        `whisker low: ${fmtFullCurrency(Number(low))}`,
+        `q1 (25%): ${fmtFullCurrency(Number(s.q1))}`,
+        `median: ${fmtFullCurrency(Number(s.median))}`,
+        `q3 (75%): ${fmtFullCurrency(Number(s.q3))}`,
+        `whisker high: ${fmtFullCurrency(Number(high))}`,
+        outCount ? `outliers: ${outCount} (sampled)` : null
+      ];
+    }
+  });
+}
 
 function setCoverageNote(
   noteEl,
@@ -193,15 +469,25 @@ function updateSavingsSuggestion(params, mcConfig, baseMcResult) {
   }
   
   // Add "die with zero" spending suggestion
-  if (spendingSuggestion && spendingSuggestion.extraAnnual > 0) {
-    const extraSpend = fmtFullCurrency(spendingSuggestion.extraAnnual);
-    const newTotal = fmtFullCurrency(spendingSuggestion.newTotalIncome);
-    const finalBal = fmtFullCurrency(Math.max(0, spendingSuggestion.medianFinalBalance));
-    msg += `<br><br><span class="badge info">Die with Zero</span> To spend down to ~$0 by age ${params.endAge}, you could spend an extra <strong>${extraSpend}/year</strong> (total ${newTotal}/year). Median final balance: ${finalBal}.`;
-    if (spendingSuggestion.successProb !== undefined) {
-      const spendSuccessPct = (spendingSuggestion.successProb * 100).toFixed(0);
-      msg += ` Success probability at that spending level: ${spendSuccessPct}%.`;
-    }
+  if (spendingSuggestion?.results) {
+    const formatLine = (label, res) => {
+      if (!res) return null;
+      if (res.extraAnnual === null) return `${label}: unavailable`;
+      if (res.extraAnnual === 0) {
+        return `${label}: +$0/yr (already near $0 at plan end)`;
+      }
+      const extraSpend = fmtFullCurrency(res.extraAnnual);
+      const newTotal = fmtFullCurrency(res.newTotalIncome);
+      const finalBal = fmtFullCurrency(Math.max(0, res.finalBalance ?? 0));
+      return `${label}: +${extraSpend}/yr (total ${newTotal}/yr), final balance ~${finalBal}`;
+    };
+
+    const p10Line = formatLine("p10", spendingSuggestion.results.p10);
+    const p50Line = formatLine("p50 (median)", spendingSuggestion.results.p50);
+    const p90Line = formatLine("p90", spendingSuggestion.results.p90);
+
+    msg += `<br><br><span class="badge info">Die with Zero</span> Extra annual spending (today’s $) to end around ~$0 by age ${params.endAge}, by outcome percentile:`;
+    msg += `<br>${p10Line || ""}<br>${p50Line || ""}<br>${p90Line || ""}`;
   } else if (spendingSuggestion && spendingSuggestion.extraAnnual === 0) {
     msg += `<br><br><span class="badge warn">Die with Zero</span> ${spendingSuggestion.message || "Current spending already depletes the portfolio."}`;
   }
@@ -268,24 +554,6 @@ function gatherGoalEvents() {
     .filter(goal => goal.label && Number.isFinite(goal.age) && Number.isFinite(goal.amount) && goal.amount > 0);
 }
 
-function gatherIncomeStreams() {
-  const streams = [];
-  if (ssToggle && ssToggle.checked) {
-    streams.push({
-      type: "socialSecurity",
-      startAge: parseFloat(document.getElementById("ssStartAge").value),
-      amount: readCurrencyInput("ssAmount"),
-      cola: document.getElementById("ssCola").checked
-    });
-  }
-  return streams.filter(
-    stream =>
-      Number.isFinite(stream.startAge) &&
-      Number.isFinite(stream.amount) &&
-      stream.amount > 0
-  );
-}
-
 function gatherParams() {
   const currentAge = parseFloat(document.getElementById("currentAge").value);
   const retireAge = parseFloat(document.getElementById("retireAge").value);
@@ -328,7 +596,6 @@ function gatherParams() {
     inflation,
     taxRate,
     afterTaxFactor: Math.max(0.05, 1 - taxRate),
-    incomeStreams: gatherIncomeStreams(),
     goalEvents: gatherGoalEvents(),
     spendingStrategy,
     inflationMode: inflationMode === "fixed" ? "fixed" : "historical",
@@ -517,7 +784,7 @@ function updateFailureScenarioChart(yearLabels, mcResult, currentAge, retireAge,
       borderDash: [4, 4],
       spanGaps: true
     },
-    params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
+    (params?.incomeNeedMode === "portfolio_pct" || params?.incomeNeedMode === "portfolio_pct_uncapped") && hasBenchmarks
       ? {
           label: "Inflated fixed baseline ($)",
           data: benchmarkSeries,
@@ -706,7 +973,7 @@ function updatePercentile10Chart(yearLabels, mcResult, currentAge, retireAge, pa
       borderDash: [4, 4],
       spanGaps: true
     },
-    params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
+    (params?.incomeNeedMode === "portfolio_pct" || params?.incomeNeedMode === "portfolio_pct_uncapped") && hasBenchmarks
       ? {
           label: "Inflated fixed baseline ($)",
           data: benchmarkSeries,
@@ -894,7 +1161,7 @@ function updatePercentile50Chart(yearLabels, mcResult, currentAge, retireAge, pa
       borderDash: [4, 4],
       spanGaps: true
     },
-    params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
+    (params?.incomeNeedMode === "portfolio_pct" || params?.incomeNeedMode === "portfolio_pct_uncapped") && hasBenchmarks
       ? {
           label: "Inflated fixed baseline ($)",
           data: benchmarkSeries,
@@ -1082,7 +1349,7 @@ function updatePercentile90Chart(yearLabels, mcResult, currentAge, retireAge, pa
       borderDash: [4, 4],
       spanGaps: true
     },
-    params?.incomeNeedMode === "portfolio_pct" && hasBenchmarks
+    (params?.incomeNeedMode === "portfolio_pct" || params?.incomeNeedMode === "portfolio_pct_uncapped") && hasBenchmarks
       ? {
           label: "Inflated fixed baseline ($)",
           data: benchmarkSeries,
@@ -1254,6 +1521,19 @@ function updateSummary(params, mcResult) {
   const mcP10Final = percentile(sortedFinalBalances, 0.1);
   const mcP90Final = percentile(sortedFinalBalances, 0.9);
   const minCoverage = Math.min(...mcResult.coverageProb) || 0;
+  const retirementStartIdx = Math.max(0, Math.floor(params.retireAge - params.currentAge));
+
+  const minScenarioCoverage = coverageSeries => {
+    if (!Array.isArray(coverageSeries) || !coverageSeries.length) return null;
+    const slice = coverageSeries.slice(retirementStartIdx);
+    const finite = slice.filter(v => Number.isFinite(v));
+    if (!finite.length) return null;
+    return Math.max(0, Math.min(...finite));
+  };
+
+  const covP10 = minScenarioCoverage(mcResult.coverageRatios?.p10);
+  const covP50 = minScenarioCoverage(mcResult.coverageRatios?.p50);
+  const covP90 = minScenarioCoverage(mcResult.coverageRatios?.p90);
 
   const addRow = (label, value) => {
     const li = document.createElement("li");
@@ -1271,7 +1551,11 @@ function updateSummary(params, mcResult) {
     "Probability of meeting 100% of need",
     (mcResult.successProb * 100).toFixed(1) + "%"
   );
-  addRow("Lowest annual income coverage (MC)", (minCoverage * 100).toFixed(0) + "%");
+  addRow("Worst-year probability of 100% coverage (across all MC runs)", (minCoverage * 100).toFixed(0) + "%");
+
+  if (covP10 !== null) addRow("Worst-year coverage ratio (p10 scenario)", (covP10 * 100).toFixed(1) + "%");
+  if (covP50 !== null) addRow("Worst-year coverage ratio (p50 scenario)", (covP50 * 100).toFixed(1) + "%");
+  if (covP90 !== null) addRow("Worst-year coverage ratio (p90 scenario)", (covP90 * 100).toFixed(1) + "%");
 
   const successProbPct = mcResult.successProb * 100;
   if (successProbPct >= 90) {
@@ -1379,8 +1663,6 @@ function runStressScenario(key) {
         age.toString(),
         fmtFullCurrency(detResult.balances[idx] ?? 0),
         detResult.incomeNeeded[idx] > 0 ? fmtFullCurrency(detResult.incomeNeeded[idx]) : "—",
-        detResult.incomeOffsets[idx] > 0 ? fmtFullCurrency(detResult.incomeOffsets[idx]) : "—",
-        detResult.netNeeds[idx] > 0 ? fmtFullCurrency(detResult.netNeeds[idx]) : "—",
         detResult.coverageFlags[idx] ? "Yes" : "No"
       ];
       cells.forEach(text => {
@@ -1444,7 +1726,6 @@ function applySnapshot(snapshot) {
   });
   updateInflationPresetSelection();
   updateMCNormalFieldsVisibility();
-  updateIncomeStreamFields();
   updateBondTentingFields();
   wireAllCurrencyInputs();
 }
@@ -1519,6 +1800,211 @@ function handleDeleteScenario() {
   renderScenarioList();
 }
 
+function updateSimulationsTab(yearLabels, mcResult, params) {
+  simResults = [...(mcResult.allSims || [])];
+  currentSimPage = 1;
+  lastYears = yearLabels;
+  lastParams = params;
+  
+  sortSimulations();
+  renderSimBubbles();
+  renderBalanceBoxplot(yearLabels, mcResult);
+}
+
+function sortSimulations() {
+  if (!simResults || simResults.length === 0) return;
+
+  simResults.sort((a, b) => {
+    // Primary: Severity of the worst year (descending coverage ratio)
+    // 1.0 (success) first, 0.0 (total failure) last.
+    const aRatio = a.minCoverageRatio ?? 1;
+    const bRatio = b.minCoverageRatio ?? 1;
+    if (Math.abs(aRatio - bRatio) > 1e-9) {
+      return bRatio - aRatio;
+    }
+
+    // Secondary: Number of years with shortfall (ascending)
+    // 0 years first, then 1, 2, 3...
+    const aShort = a.shortfallYears ?? 0;
+    const bShort = b.shortfallYears ?? 0;
+    if (aShort !== bShort) {
+      return aShort - bShort;
+    }
+
+    // Tertiary: Final balance (descending)
+    // High balance first.
+    return (b.finalBalance ?? 0) - (a.finalBalance ?? 0);
+  });
+}
+
+function renderSimBubbles() {
+  const container = document.getElementById("simBubbleContainer");
+  const paginationEl = document.getElementById("simPagination");
+  if (!container || !paginationEl) return;
+
+  container.innerHTML = "";
+  
+  const start = (currentSimPage - 1) * simsPerPage;
+  const end = Math.min(start + simsPerPage, simResults.length);
+  const pageSims = simResults.slice(start, end);
+
+  pageSims.forEach(sim => {
+    const bubble = document.createElement("div");
+    bubble.className = "sim-bubble";
+    
+    // Success coloring
+    if (sim.success) {
+      bubble.classList.add("success");
+    } else if (sim.minCoverageRatio >= 0.5) {
+      bubble.classList.add("warning");
+    } else {
+      bubble.classList.add("danger");
+    }
+
+    bubble.title = `Sim #${sim.id + 1}\nShortfall Years: ${sim.shortfallYears}\nFinal: ${fmtFullCurrency(sim.finalBalance)}\nMin Coverage: ${(sim.minCoverageRatio * 100).toFixed(1)}%`;
+    bubble.textContent = (sim.id + 1).toString();
+    
+    bubble.addEventListener("click", () => {
+      document.querySelectorAll(".sim-bubble").forEach(b => b.classList.remove("active"));
+      bubble.classList.add("active");
+      showSimDetail(sim);
+    });
+
+    container.appendChild(bubble);
+  });
+
+  renderSimPagination(paginationEl);
+}
+
+function renderSimPagination(el) {
+  const totalPages = Math.ceil(simResults.length / simsPerPage);
+  el.innerHTML = "";
+
+  if (totalPages <= 1) return;
+
+  const prevBtn = document.createElement("button");
+  prevBtn.textContent = "←";
+  prevBtn.disabled = currentSimPage === 1;
+  prevBtn.addEventListener("click", () => {
+    currentSimPage--;
+    renderSimBubbles();
+  });
+  el.appendChild(prevBtn);
+
+  const info = document.createElement("span");
+  info.className = "page-info";
+  info.textContent = `Page ${currentSimPage} of ${totalPages}`;
+  el.appendChild(info);
+
+  const nextBtn = document.createElement("button");
+  nextBtn.textContent = "→";
+  nextBtn.disabled = currentSimPage === totalPages;
+  nextBtn.addEventListener("click", () => {
+    currentSimPage++;
+    renderSimBubbles();
+  });
+  el.appendChild(nextBtn);
+}
+
+function showSimDetail(sim) {
+  const detailEl = document.getElementById("selectedSimDetail");
+  const titleEl = document.getElementById("selectedSimTitle");
+  const noteEl = document.getElementById("selectedSimNote");
+  const canvas = document.getElementById("selectedSimChart");
+  
+  if (!detailEl || !titleEl || !noteEl || !canvas) return;
+
+  detailEl.style.display = "block";
+  titleEl.textContent = `Simulation #${sim.id + 1} Details`;
+  
+  if (selectedSimChart) selectedSimChart.destroy();
+
+  const ctx = canvas.getContext("2d");
+  
+  const withdrawalData = (sim.withdrawals || []).map((val, idx) => {
+    const age = lastYears[idx];
+    return age < lastParams.retireAge ? null : val;
+  });
+
+  const benchmarkSeries = (sim.benchmarks || []).map((val, idx) => {
+    const age = lastYears[idx];
+    if (age < lastParams.retireAge) return null;
+    return val > 0 ? val : null;
+  });
+
+  const hasBenchmarks = benchmarkSeries.some(v => v !== null);
+
+  const datasets = [
+    {
+      label: "Balance ($)",
+      data: sim.balances,
+      borderWidth: 2,
+      borderColor: "rgba(21, 128, 61, 1)",
+      backgroundColor: "rgba(21, 128, 61, 0.1)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y"
+    },
+    {
+      label: "Actual withdrawal ($)",
+      data: withdrawalData,
+      borderWidth: 2,
+      borderColor: "rgba(168, 85, 247, 1)",
+      backgroundColor: "rgba(168, 85, 247, 0.1)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y",
+      spanGaps: true
+    }
+  ];
+
+  if (hasBenchmarks) {
+    datasets.push({
+      label: "Inflated fixed baseline ($)",
+      data: benchmarkSeries,
+      borderWidth: 2,
+      borderColor: "rgba(107, 114, 128, 0.9)",
+      backgroundColor: "rgba(107, 114, 128, 0.08)",
+      tension: 0.15,
+      fill: false,
+      yAxisID: "y",
+      borderDash: [4, 4]
+    });
+  }
+
+  selectedSimChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: lastYears.map(String),
+      datasets
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmtFullCurrency(ctx.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          ticks: {
+            callback: val => fmtCurrency(val)
+          }
+        }
+      }
+    }
+  });
+
+  noteEl.textContent = `This simulation had ${sim.shortfallYears} shortfall years and ended with a balance of ${fmtFullCurrency(sim.finalBalance)}. Minimum income coverage was ${(sim.minCoverageRatio * 100).toFixed(1)}%.`;
+  
+  // Scroll to detail
+  detailEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
 function handleTabClick(e) {
   const tab = e.currentTarget.dataset.tab;
   tabButtons.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
@@ -1532,15 +2018,6 @@ function updateMCNormalFieldsVisibility() {
   });
 }
 
-function updateIncomeStreamFields() {
-  const enabled = ssToggle ? ssToggle.checked : false;
-  document.querySelectorAll('[data-stream-group="ss"]').forEach(wrapper => {
-    wrapper.classList.toggle("stream-disabled", !enabled);
-    wrapper.querySelectorAll("input").forEach(input => {
-      input.disabled = !enabled;
-    });
-  });
-}
 
 function updateBondTentingFields() {
   const enabled = bondTentingToggle ? bondTentingToggle.checked : false;
@@ -1677,18 +2154,16 @@ function resetToDefaults() {
     currentAge: 35,
     retireAge: 55,
     endAge: 100,
-    currentSavings: 1250000,
+    currentSavings: 1500000,
     annualContrib: 300000,
     incomeNeed: 200000,
     incomeNeedBaseline: 200000,
-    incomeNeedPct: 3.5,
+    incomeNeedPct: 5.0,
     inflation: 3,
     taxRate: 18,
     numSims: 1000,
     mcMean: HISTORICAL_STATS.mean.toFixed(1),
     mcStdev: HISTORICAL_STATS.stdev.toFixed(1),
-    ssStartAge: 67,
-    ssAmount: 40000,
     scenarioName: ""
   };
   Object.entries(assignments).forEach(([id, value]) => {
@@ -1699,15 +2174,12 @@ function resetToDefaults() {
   if (incomeNeedModeSelect) incomeNeedModeSelect.value = "portfolio_pct";
   document.getElementById("mcMode").value = "historical_regime_markov_1980";
   document.getElementById("inflationMode").value = "historical";
-  if (ssToggle) ssToggle.checked = false;
-  document.getElementById("ssCola").checked = false;
   if (bondTentingToggle) bondTentingToggle.checked = false;
   if (inflationPresetSelect) inflationPresetSelect.value = "since1980";
   resetInflationSelectionNote();
   resetSavingsSuggestionNote();
   updateInflationPresetSelection();
   updateMCNormalFieldsVisibility();
-  updateIncomeStreamFields();
   updateBondTentingFields();
   updateIncomeNeedModeVisibility();
   setGoalRows([]);
@@ -1735,6 +2207,7 @@ function runSimulation() {
   updateSummary(params, mcResult);
   updateResultsTable(years, mcResult, params);
   updateSavingsSuggestion(params, mcConfig, mcResult);
+  updateSimulationsTab(years, mcResult, params);
 }
 
 document.getElementById("runBtn").addEventListener("click", runSimulation);
@@ -1756,9 +2229,6 @@ if (inflationPresetSelect) {
 mcModeSelect.addEventListener("change", () => {
   updateMCNormalFieldsVisibility();
 });
-if (ssToggle) {
-  ssToggle.addEventListener("change", updateIncomeStreamFields);
-}
 if (bondTentingToggle) {
   bondTentingToggle.addEventListener("change", updateBondTentingFields);
 }
@@ -1778,6 +2248,15 @@ if (addGoalBtn) {
   addGoalBtn.addEventListener("click", () => createGoalRow());
 }
 
+const simSortSelect = document.getElementById("simSort");
+if (simSortSelect) {
+  simSortSelect.addEventListener("change", () => {
+    currentSimPage = 1;
+    sortSimulations();
+    renderSimBubbles();
+  });
+}
+
 tabButtons.forEach(btn => btn.addEventListener("click", handleTabClick));
 
 document.getElementById("saveScenarioBtn").addEventListener("click", handleSaveScenario);
@@ -1786,9 +2265,21 @@ document.getElementById("deleteScenarioBtn").addEventListener("click", handleDel
 
 function updateIncomeNeedModeVisibility() {
   const mode = incomeNeedModeSelect?.value || "portfolio_pct";
+  const helpEl = document.getElementById("incomeNeedHelp");
+
   if (incomeNeedFixedRow) incomeNeedFixedRow.style.display = mode === "fixed" ? "" : "none";
-  if (incomeNeedPctRow) incomeNeedPctRow.style.display = mode === "portfolio_pct" ? "" : "none";
-  if (incomeNeedBaselineRow) incomeNeedBaselineRow.style.display = mode === "portfolio_pct" ? "" : "none";
+  if (incomeNeedPctRow) incomeNeedPctRow.style.display = (mode === "portfolio_pct" || mode === "portfolio_pct_uncapped") ? "" : "none";
+  if (incomeNeedBaselineRow) incomeNeedBaselineRow.style.display = (mode === "portfolio_pct" || mode === "portfolio_pct_uncapped") ? "" : "none";
+
+  if (helpEl) {
+    if (mode === "portfolio_pct") {
+      helpEl.textContent = "In 'Lower of % or fixed amount (capped)' mode, withdrawals are capped at the lower of your inflated baseline need and the chosen % of portfolio value. If you want this to behave mainly as a boom-year spending cap (not an austerity rule), pick a % high enough that it usually doesn’t bind below your baseline in normal years.";
+    } else if (mode === "portfolio_pct_uncapped") {
+      helpEl.textContent = "In 'Fixed % of portfolio (uncapped)' mode, yearly withdrawals are exactly the chosen percentage of portfolio value, with no upper limit in strong market years. The baseline is used for success probability and table comparisons.";
+    } else {
+      helpEl.textContent = "";
+    }
+  }
 }
 
 window.addEventListener("load", () => {

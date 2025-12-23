@@ -174,32 +174,24 @@ function estimateAdditionalWorkYears(params, mcConfig, baseMcResult, target = SA
 
 /**
  * Estimates how much extra annual spending (in today's dollars) would result in
- * the median simulation ending at approximately $0 at the plan end age.
+ * a chosen percentile simulation ending at approximately $0 at the plan end age.
  * This is useful for "die with zero" style planning.
  * 
  * @param {Object} params - The retirement parameters
  * @param {Object} mcConfig - Monte Carlo configuration
  * @param {Object} baseMcResult - Result from initial Monte Carlo run
- * @returns {Object|null} { extraAnnual, medianFinalBalance, newTotalIncome }
+ * @returns {Object|null} { baseIncomeNeed, results: { p10, p50, p90 } }
  */
 function estimateExtraAnnualSpending(params, mcConfig, baseMcResult) {
   if (!params || !mcConfig || !baseMcResult) return null;
   
   const sortedFinalBalances = [...baseMcResult.finalBalances].sort((a, b) => a - b);
-  const baseMedianFinal = sortedFinalBalances[Math.floor(sortedFinalBalances.length * 0.5)];
+  const baseP10Final = sortedFinalBalances[Math.floor(sortedFinalBalances.length * 0.1)];
+  const baseP50Final = sortedFinalBalances[Math.floor(sortedFinalBalances.length * 0.5)];
+  const baseP90Final = sortedFinalBalances[Math.floor(sortedFinalBalances.length * 0.9)];
   const baseIncomeNeed = params.incomeNeed;
   
-  if (!Number.isFinite(baseMedianFinal) || !Number.isFinite(baseIncomeNeed)) return null;
-  
-  // If median final balance is already 0 or negative, can't spend more
-  if (baseMedianFinal <= 0) {
-    return {
-      extraAnnual: 0,
-      medianFinalBalance: baseMedianFinal,
-      newTotalIncome: baseIncomeNeed,
-      message: "Median balance already depleted at plan end."
-    };
-  }
+  if (!Number.isFinite(baseP50Final) || !Number.isFinite(baseIncomeNeed)) return null;
   
   const suggestionConfig = buildSavingsSuggestionConfig(mcConfig);
   if (!suggestionConfig) return null;
@@ -220,86 +212,100 @@ function estimateExtraAnnualSpending(params, mcConfig, baseMcResult) {
     };
     const trialResult = runMonteCarlo(trialParams, suggestionConfig);
     const trialSorted = [...trialResult.finalBalances].sort((a, b) => a - b);
-    const medianFinal = trialSorted[Math.floor(trialSorted.length * 0.5)];
-    cache.set(key, { medianFinal, successProb: trialResult.successProb });
-    return { medianFinal, successProb: trialResult.successProb };
+    const p10Final = trialSorted[Math.floor(trialSorted.length * 0.1)];
+    const p50Final = trialSorted[Math.floor(trialSorted.length * 0.5)];
+    const p90Final = trialSorted[Math.floor(trialSorted.length * 0.9)];
+    const result = { p10Final, p50Final, p90Final, successProb: trialResult.successProb };
+    cache.set(key, result);
+    return result;
   };
   
-  // Binary search to find extra spending that brings median final balance close to 0
-  // Target: median final balance between 0 and a small positive threshold
-  const targetThreshold = baseIncomeNeed * 0.5; // Allow up to 0.5x income need as "close to zero"
-  
-  let lowExtra = 0;
-  let highExtra = 0;
-  let highResult = { medianFinal: baseMedianFinal };
-  let guard = 0;
-  
-  // First, find an upper bound where median goes to 0 or negative
-  while (highExtra < maxExtra && highResult.medianFinal > targetThreshold && guard < 12) {
-    highExtra = highExtra === 0 ? 10000 : highExtra * 2;
-    if (highExtra > maxExtra) highExtra = maxExtra;
-    highResult = runTrial(highExtra);
-    guard += 1;
-    if (highResult.medianFinal <= 0) break;
-    if (highExtra >= maxExtra) break;
-  }
-  
-  // If even max extra spending doesn't deplete portfolio, return max
-  if (highResult.medianFinal > targetThreshold) {
+  // Target: percentile final balance between 0 and a small positive threshold.
+  // Allow up to 0.5x income need as "close to zero".
+  const targetThreshold = baseIncomeNeed * 0.5;
+
+  const solveForQuantile = (label, baseFinal, pickFinal) => {
+    if (!Number.isFinite(baseFinal)) {
+      return {
+        extraAnnual: null,
+        finalBalance: null,
+        newTotalIncome: baseIncomeNeed,
+        successProb: undefined,
+        message: `${label} final balance is unavailable.`
+      };
+    }
+
+    // If this percentile is already near-depleted, can't spend more (for that percentile).
+    if (baseFinal <= targetThreshold) {
+      return {
+        extraAnnual: 0,
+        finalBalance: baseFinal,
+        newTotalIncome: baseIncomeNeed,
+        successProb: baseMcResult.successProb,
+        message: `${label} balance is already near $0 at plan end.`
+      };
+    }
+
+    let lowExtra = 0;
+    let highExtra = 0;
+    let highResult = runTrial(0);
+    let guard = 0;
+
+    // Find an upper bound where the chosen percentile drops to <= targetThreshold
+    while (highExtra < maxExtra && pickFinal(highResult) > targetThreshold && guard < 12) {
+      highExtra = highExtra === 0 ? 10000 : highExtra * 2;
+      if (highExtra > maxExtra) highExtra = maxExtra;
+      highResult = runTrial(highExtra);
+      guard += 1;
+      if (highExtra >= maxExtra) break;
+    }
+
+    // If even max extra spending doesn't bring this percentile close to zero, return max
+    if (pickFinal(highResult) > targetThreshold) {
+      return {
+        extraAnnual: maxExtra,
+        finalBalance: pickFinal(highResult),
+        newTotalIncome: baseIncomeNeed + maxExtra,
+        successProb: highResult.successProb,
+        message: `Even adding ${maxExtra.toLocaleString()} per year keeps ${label} final balance positive.`
+      };
+    }
+
+    // Binary search for the smallest extra that gets <= targetThreshold
+    let bestExtra = highExtra;
+    let bestResult = highResult;
+    for (let i = 0; i < 14; i++) {
+      if (highExtra - lowExtra < SPENDING_MIN_INCREMENT) break;
+      const midExtra = (lowExtra + highExtra) / 2;
+      const midResult = runTrial(midExtra);
+      if (pickFinal(midResult) <= targetThreshold) {
+        bestExtra = midExtra;
+        bestResult = midResult;
+        highExtra = midExtra;
+        highResult = midResult;
+      } else {
+        lowExtra = midExtra;
+      }
+    }
+
+    const roundedExtra = Math.max(
+      0,
+      Math.floor(bestExtra / SPENDING_MIN_INCREMENT) * SPENDING_MIN_INCREMENT
+    );
+    const finalResult = runTrial(roundedExtra);
     return {
-      extraAnnual: maxExtra,
-      medianFinalBalance: highResult.medianFinal,
-      newTotalIncome: baseIncomeNeed + maxExtra,
-      successProb: highResult.successProb,
-      message: `Even adding ${maxExtra.toLocaleString()} per year leaves median balance positive.`
+      extraAnnual: roundedExtra,
+      finalBalance: pickFinal(finalResult),
+      newTotalIncome: baseIncomeNeed + roundedExtra,
+      successProb: finalResult.successProb
     };
-  }
-  
-  // Binary search to find the sweet spot
-  let bestExtra = highExtra;
-  let bestResult = highResult;
-  
-  for (let i = 0; i < 14; i++) {
-    if (highExtra - lowExtra < SPENDING_MIN_INCREMENT) break;
-    const midExtra = (lowExtra + highExtra) / 2;
-    const midResult = runTrial(midExtra);
-    
-    if (midResult.medianFinal <= 0) {
-      // Too much spending - reduce
-      highExtra = midExtra;
-      highResult = midResult;
-    } else if (midResult.medianFinal > targetThreshold) {
-      // Not enough spending - increase
-      lowExtra = midExtra;
-    } else {
-      // In the sweet spot (0 < median <= threshold)
-      bestExtra = midExtra;
-      bestResult = midResult;
-      break;
-    }
-    
-    // Track the best result that keeps median just above 0
-    if (midResult.medianFinal > 0 && midResult.medianFinal <= targetThreshold) {
-      bestExtra = midExtra;
-      bestResult = midResult;
-    }
-  }
-  
-  // If we haven't found a sweet spot, use the lower bound (safer)
-  if (bestResult.medianFinal <= 0 && lowExtra > 0) {
-    bestExtra = lowExtra;
-    bestResult = runTrial(lowExtra);
-  }
-  
-  const roundedExtra = Math.max(0, Math.floor(bestExtra / SPENDING_MIN_INCREMENT) * SPENDING_MIN_INCREMENT);
-  const finalResult = runTrial(roundedExtra);
-  
-  return {
-    extraAnnual: roundedExtra,
-    medianFinalBalance: finalResult.medianFinal,
-    newTotalIncome: baseIncomeNeed + roundedExtra,
-    successProb: finalResult.successProb
   };
+
+  const p10 = solveForQuantile("p10", baseP10Final, r => r.p10Final);
+  const p50 = solveForQuantile("p50", baseP50Final, r => r.p50Final);
+  const p90 = solveForQuantile("p90", baseP90Final, r => r.p90Final);
+
+  return { baseIncomeNeed, results: { p10, p50, p90 } };
 }
 
 function withdrawFromBalance(balance, amount) {
@@ -415,23 +421,6 @@ function computeGoalWithdrawal(age, params, inflationOverride) {
   }, 0);
 }
 
-function computeExtraIncome(age, params, inflationOverride) {
-  const effectiveInflation = Number.isFinite(inflationOverride)
-    ? inflationOverride
-    : params.inflation;
-  if (!params.incomeStreams || !params.incomeStreams.length) return 0;
-  return params.incomeStreams.reduce((sum, stream) => {
-    if (!Number.isFinite(stream.startAge) || !Number.isFinite(stream.amount) || stream.amount <= 0) return sum;
-    if (age < stream.startAge) return sum;
-    const baseFactor = Math.pow(1 + effectiveInflation, Math.max(0, stream.startAge - params.currentAge));
-    let payment = stream.amount * baseFactor;
-    if (stream.cola) {
-      const colaYears = Math.max(0, age - stream.startAge);
-      payment *= Math.pow(1 + effectiveInflation, colaYears);
-    }
-    return sum + payment;
-  }, 0);
-}
 
 function getSpendingTarget(age, params, spendingState, inflationOverride, cumulativeInflationFactor, portfolioValue) {
   const effectiveInflation = Number.isFinite(inflationOverride)
@@ -457,6 +446,8 @@ function getSpendingTarget(age, params, spendingState, inflationOverride, cumula
     // Avoid withdrawing more than the inflated baseline need even if the percentage
     // would allow a larger withdrawal in strong market years.
     targetBase = Math.min(fixedInflated, pctBasedTarget);
+  } else if (incomeMode === "portfolio_pct_uncapped" && Number.isFinite(portfolioValue) && portfolioValue > 0 && incomeNeedPct > 0) {
+    targetBase = portfolioValue * incomeNeedPct;
   } else {
     targetBase = fixedInflated;
   }
@@ -482,9 +473,6 @@ function simulateDeterministic(params, opts = {}) {
   const years = [];
   const balances = [];
   const incomeNeeded = [];
-  const incomeOffsets = [];
-  const netNeeds = [];
-  const otherIncomeSeries = [];
   const coverageFlags = [];
   const incomeBenchmarks = [];
   const spendingState = { prev: null };
@@ -516,9 +504,6 @@ function simulateDeterministic(params, opts = {}) {
     const isWorking = age < params.retireAge;
     if (isWorking) {
       incomeNeeded.push(0);
-      incomeOffsets.push(0);
-      netNeeds.push(0);
-      otherIncomeSeries.push(0);
       incomeBenchmarks.push(0);
       balance += params.annualContrib;
       balance = applyGrowthToBalance(balance, pickReturn(age, preRetReturn));
@@ -534,12 +519,7 @@ function simulateDeterministic(params, opts = {}) {
       );
       incomeBenchmarks.push(fixedInflated);
       incomeNeeded.push(desiredAfterTax);
-      const otherIncome = computeExtraIncome(age, params);
-      otherIncomeSeries.push(otherIncome);
-      incomeOffsets.push(otherIncome);
-      const netAfterTax = Math.max(desiredAfterTax - otherIncome, 0);
-      netNeeds.push(netAfterTax);
-      const grossWithdrawal = netAfterTax / params.afterTaxFactor;
+      const grossWithdrawal = desiredAfterTax / params.afterTaxFactor;
       const withdrawalResult = withdrawFromBalance(balance, grossWithdrawal);
       balance = withdrawalResult.balance;
       if (withdrawalResult.shortage > 1e-4) {
@@ -556,9 +536,6 @@ function simulateDeterministic(params, opts = {}) {
     years,
     balances,
     incomeNeeded,
-    incomeOffsets,
-    otherIncomeSeries,
-    netNeeds,
     coverageFlags,
     incomeBenchmarks,
     finalBalance: balance
@@ -689,9 +666,7 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory, minInco
       );
       incomeBenchmarks.push(fixedInflated);
       spendingTargets.push(desiredAfterTax);
-      const otherIncome = computeExtraIncome(age, params, inflationOverride);
-      const netAfterTax = Math.max(desiredAfterTax - otherIncome, 0);
-      const gross = netAfterTax / params.afterTaxFactor;
+      const gross = desiredAfterTax / params.afterTaxFactor;
       // Cap spending request to what is actually available after growth/goal withdrawals
       const availableForSpending = totalPortfolio(balance, bondReserve);
       const spendingRequest = Math.min(Math.max(0, gross), availableForSpending);
@@ -755,7 +730,7 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory, minInco
         }
       }
 
-      const totalAfterTaxIncome = otherIncome + actualSpendingWithdrawal * params.afterTaxFactor;
+      const totalAfterTaxIncome = actualSpendingWithdrawal * params.afterTaxFactor;
       coverageRatio = fixedInflated > 0 ? totalAfterTaxIncome / fixedInflated : 1;
       if (coverageRatio + 1e-9 < coverageFloor) {
         coverageMet = false;
@@ -782,13 +757,16 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory, minInco
     coverageFull.push(metFullNeed);
     coverage.push(metFullNeed);
     coverageRatios.push(Math.max(0, coverageRatio));
-    const effectiveCoverageRatio = coverageMet ? coverageRatio : Math.min(coverageRatio, 0);
+    const effectiveCoverageRatio = coverageMet ? coverageRatio : Math.min(coverageRatio, 1 - 1e-10);
     pathMinCoverage = Math.min(pathMinCoverage, effectiveCoverageRatio);
 
     // If the portfolio is depleted, stop the simulation and fill the
     // remaining years with zeros to avoid phantom withdrawals/balances.
     if (balanceAtEndOfYear <= 1e-6) {
       const remainingYears = params.endAge - age;
+      if (remainingYears > 0) {
+        pathMinCoverage = 0;
+      }
       const lastTarget = spendingTargets[spendingTargets.length - 1] || 0;
       const assumedInflation = Number.isFinite(inflationOverride) ? inflationOverride : params.inflation || 0;
       let futureNeed = lastTarget;
@@ -859,7 +837,15 @@ function runMonteCarlo(params, mcConfig) {
       ? () => buildRegimeMarkovSequencer(horizonYears, useModernEra)
       : null;
 
+  const allSims = [];
+
   for (let i = 0; i < mcConfig.numSims; i++) {
+    const result = simulateOneMCPath(
+      params,
+      mcConfig,
+      historicalSequencerFactory,
+      minIncomeCoverage
+    );
     const {
       balances,
       coverage,
@@ -873,12 +859,21 @@ function runMonteCarlo(params, mcConfig) {
       coverageFull,
       coverageRatios,
       minCoverageRatio
-    } = simulateOneMCPath(
-      params,
-      mcConfig,
-      historicalSequencerFactory,
-      minIncomeCoverage
-    );
+    } = result;
+
+    allSims.push({
+      id: i,
+      balances: [...balances],
+      returns: [...returns],
+      inflations: [...inflations],
+      withdrawals: [...withdrawals],
+      benchmarks: [...incomeBenchmarks],
+      finalBalance: balances[balances.length - 1],
+      success: minCoverageRatio >= 1 - 1e-9,
+      minCoverageRatio,
+      shortfallYears: coverageFull.filter(f => !f).length
+    });
+
     paths.push(balances);
     returnPaths.push(returns);
     inflationPaths.push(inflations);
@@ -896,11 +891,68 @@ function runMonteCarlo(params, mcConfig) {
     });
   }
 
+  // Helper: Tukey boxplot stats (whiskers=1.5*IQR, outliers outside whiskers)
+  const computeTukeyBoxplot = values => {
+    if (!Array.isArray(values) || values.length === 0) return null;
+    const sorted = values
+      .map(v => Number(v))
+      .filter(v => Number.isFinite(v))
+      .sort((a, b) => a - b);
+    if (!sorted.length) return null;
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const q1 = percentile(sorted, 0.25);
+    const median = percentile(sorted, 0.5);
+    const q3 = percentile(sorted, 0.75);
+    const iqr = q3 - q1;
+    const lowFence = q1 - 1.5 * iqr;
+    const highFence = q3 + 1.5 * iqr;
+
+    let whiskerLow = min;
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i] >= lowFence) {
+        whiskerLow = sorted[i];
+        break;
+      }
+    }
+    let whiskerHigh = max;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (sorted[i] <= highFence) {
+        whiskerHigh = sorted[i];
+        break;
+      }
+    }
+
+    const outliers = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const v = sorted[i];
+      if (v < whiskerLow || v > whiskerHigh) outliers.push(v);
+    }
+
+    return {
+      min,
+      q1,
+      median,
+      q3,
+      max,
+      whiskerLow,
+      whiskerHigh,
+      outliers
+    };
+  };
+
+  // Per-year boxplot stats for balances (start-of-year balances)
+  const balanceBoxplots = new Array(horizonYears).fill(null);
+  for (let t = 0; t < horizonYears; t++) {
+    const values = paths.map(path => (Array.isArray(path) ? path[t] : 0));
+    balanceBoxplots[t] = computeTukeyBoxplot(values);
+  }
+
   // Step 1: Identify percentile paths based on final balance
   // Create indexed pairs: (finalBalance, pathIndex)
   const indexedFinalBalances = finalBalances.map((balance, index) => ({ balance, index }));
   indexedFinalBalances.sort((a, b) => a.balance - b.balance);
-  
+
   // Find the path indices at percentile positions
   const p10PathIndex = indexedFinalBalances[Math.floor(indexedFinalBalances.length * 0.1)].index;
   const p50PathIndex = indexedFinalBalances[Math.floor(indexedFinalBalances.length * 0.5)].index;
@@ -1025,8 +1077,10 @@ function runMonteCarlo(params, mcConfig) {
     balancePaths: sortedBalances,
     coveragePaths: sortedCoverageFull,
     coverageRatios: sortedCoverageRatios,
+    balanceBoxplots,
     failurePath,
-    minIncomeCoverage
+    minIncomeCoverage,
+    allSims
   };
 }
 

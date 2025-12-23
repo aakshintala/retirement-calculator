@@ -513,3 +513,67 @@ tbody tr:nth-child(odd) {
   }
 }
 
+
+/* Simulation Tab Bubbles */
+.bubble-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.sim-bubble {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: bold;
+  color: white;
+  transition: transform 0.1s ease-in-out, box-shadow 0.1s;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.sim-bubble:hover {
+  transform: scale(1.2);
+  z-index: 10;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.sim-bubble.active {
+  box-shadow: 0 0 0 2px white, 0 0 0 4px #4338ca;
+  transform: scale(1.2);
+}
+
+.sim-bubble.success {
+  background-color: #10b981; /* Green 500 */
+}
+
+.sim-bubble.warning {
+  background-color: #f59e0b; /* Amber 500 */
+}
+
+.sim-bubble.danger {
+  background-color: #ef4444; /* Red 500 */
+}
+
+.pagination {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.pagination button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.8rem;
+  min-width: 2rem;
+}
+
+.pagination .page-info {
+  font-size: 0.85rem;
+  color: #4b5563;
+  margin: 0 0.5rem;
+}

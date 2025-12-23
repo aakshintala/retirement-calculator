@@ -39,7 +39,6 @@ function baseParams(overrides = {}) {
     inflation: 0.02,
     taxRate: 0,
     afterTaxFactor: 1,
-    incomeStreams: [],
     goalEvents: [],
     spendingStrategy: "fixed",
     inflationMode: "fixed",
@@ -97,8 +96,7 @@ describe("simulateDeterministic coverage", () => {
       endAge: 62,
       annualContrib: 1000,
       incomeNeed: 0,
-      goalEvents: [],
-      incomeStreams: []
+      goalEvents: []
     });
     const customReturns = [0.1, 0.1, 0.1]; // applied for ages 60, 61, 62
     const result = simulateDeterministic(params, { customReturns });
@@ -110,7 +108,7 @@ describe("simulateDeterministic coverage", () => {
     assert.equal(result.coverageFlags.every(Boolean), true);
   });
 
-  test("goal withdrawals and income streams inflate correctly", () => {
+  test("goal withdrawals inflate correctly", () => {
     const params = baseParams({
       retireAge: 60,
       endAge: 61,
@@ -118,14 +116,11 @@ describe("simulateDeterministic coverage", () => {
       currentSavings: 20000,
       incomeNeed: 0,
       goalEvents: [{ label: "college", age: 60, amount: 10000 }],
-      incomeStreams: [{ type: "pension", startAge: 61, amount: 5000, cola: true }],
       inflation: 0.03
     });
     const result = simulateDeterministic(params);
     // Goal at age 60 should reduce final balance from the starting amount
     assert.ok(result.finalBalance < params.currentSavings);
-    // Pension with COLA starts at 61 and grows with inflation
-    assert.ok(result.incomeOffsets[1] > 5000);
   });
 });
 
@@ -245,6 +240,34 @@ describe("runMonteCarlo aggregation", () => {
     const res = runMonteCarlo(params, mcConfig);
     assert.equal(res.successProb, 0);
     assert.ok(Math.min(...res.coverageProb) < 0.75);
+    restore();
+  });
+
+  test("portfolio_pct_uncapped mode ignores the fixed income baseline cap", () => {
+    const restore = useDeterministicRandom([0.5]);
+    const params = baseParams({
+      currentAge: 65,
+      retireAge: 65,
+      endAge: 65,
+      annualContrib: 0,
+      currentSavings: 1000000,
+      incomeNeed: 10000, // Small baseline
+      incomeNeedBaseline: 10000,
+      incomeNeedMode: "portfolio_pct_uncapped",
+      incomeNeedPct: 0.1, // 10% of 1M = 100k, much larger than baseline
+      preRetReturn: 0,
+      postRetReturn: 0,
+      inflation: 0,
+      taxRate: 0,
+      afterTaxFactor: 1
+    });
+    // In uncapped mode, it should withdraw 100k
+    const mcConfig = mc({ numSims: 1, mean: 0, stdev: 0 });
+    const res = runMonteCarlo(params, mcConfig);
+    // withdrawal is for age 65. Starting balance 1M. 10% is 100k.
+    // withdrawals are stored in the result paths.
+    const withdrawal = res.withdrawals?.p50[0] ?? 0;
+    assert.ok(withdrawal > 90000, `Expected ~100k withdrawal, got ${withdrawal}`);
     restore();
   });
 

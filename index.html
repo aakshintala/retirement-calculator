@@ -18,6 +18,7 @@
   <div class="tabs">
     <button class="tab-button active" data-tab="overview">Overview</button>
     <button class="tab-button" data-tab="stress">Stress Tests</button>
+    <button class="tab-button" data-tab="simulations">Simulations</button>
   </div>
 
   <div class="tab-panel active" data-tab="overview">
@@ -79,7 +80,7 @@
               type="text"
               inputmode="decimal"
               class="currency-input"
-              value="1,250,000"
+              value="1,500,000"
             />
           </div>
         </div>
@@ -110,15 +111,16 @@
               <span
                 class="help-icon"
                 tabindex="0"
-                aria-label="Choose either a fixed amount in today's dollars or a percentage of your portfolio (safe withdrawal rate)"
-                data-tooltip="Choose either a fixed amount in today's dollars or a percentage of your portfolio (safe withdrawal rate)"
+                aria-label="Choose between a fixed amount, a capped portfolio percentage, or a fixed uncapped portfolio percentage."
+                data-tooltip="Choose between a fixed amount, a capped portfolio percentage, or a fixed uncapped portfolio percentage."
               >?</span>
             </label>
           <div class="stacked-field">
             <div class="inline-unit income-mode-row">
               <select id="incomeNeedMode">
                 <option value="fixed">Fixed amount (today's $)</option>
-                <option value="portfolio_pct" selected>Portfolio % (safe withdrawal)</option>
+                <option value="portfolio_pct" selected>Lower of % or fixed amount (capped)</option>
+                <option value="portfolio_pct_uncapped">Fixed % of portfolio (uncapped)</option>
               </select>
             </div>
             <div class="inline-unit income-fixed-row" id="incomeNeedFixedRow">
@@ -132,7 +134,7 @@
               />
             </div>
             <div class="inline-unit income-pct-row" id="incomeNeedPctRow" style="display:none;">
-              <input id="incomeNeedPct" type="number" value="3.5" step="0.1" min="0" max="15" />
+              <input id="incomeNeedPct" type="number" value="5.0" step="0.1" min="0" max="15" />
               <span>% of portfolio / yr</span>
             </div>
             <div class="inline-unit baseline-row income-baseline-row" id="incomeNeedBaselineRow" style="display:none;">
@@ -147,7 +149,7 @@
               <span class="small">Baseline for inflated-need compare</span>
             </div>
           </div>
-        <div class="small">
+        <div class="small" id="incomeNeedHelp">
           In Portfolio % (safe-withdrawal) mode, yearly withdrawals are capped at
           the lower of your inflated baseline need and the chosen percentage of
           portfolio value to avoid overspending in strong market years.
@@ -219,8 +221,8 @@
               >?</span>
             </label>
           <select id="mcMode">
-              <option value="historical_regime_markov_1980">Historical regime-based Markov (SPY 1980–2024)</option>
-              <option value="historical_regime_markov">Historical regime-based Markov (SPY 1928–2025)</option>
+              <option value="historical_regime_markov_1980">SPY 1980–2024 Markov</option>
+              <option value="historical_regime_markov">SPY 1928–2025 Markov</option>
             <option value="normal">Normal dist (mean &amp; stdev)</option>
           </select>
         </div>
@@ -297,41 +299,7 @@
         Maintains a bond reserve equal to the specified years of expenses. During bear/flat market regimes, withdrawals come from bonds first, protecting stock holdings from being sold in down markets. Bonds are refilled conservatively only when critically low. <strong>Note:</strong> Bond tenting may reduce overall success probability because bonds typically earn lower returns than stocks, but it provides better protection against sequence-of-returns risk during market downturns. Only works with regime-based Markov mode.
       </div>
 
-        <div class="section-title" style="margin-top:1.25rem;">Additional Income Streams</div>
-        <div class="mini-grid">
-          <div class="field">
-            <label class="inline-checkbox">
-              <input id="ssEnabled" type="checkbox" class="stream-toggle" />
-              Apply Social Security
-            </label>
-          </div>
-          <div class="field" data-stream-group="ss">
-            <label for="ssStartAge">Social Security start age</label>
-            <input id="ssStartAge" type="number" value="67" min="50" max="80" />
-          </div>
-          <div class="field" data-stream-group="ss">
-            <label for="ssAmount">Social Security annual amount</label>
-            <div class="inline-unit">
-              <span>$</span>
-              <input
-                id="ssAmount"
-                type="text"
-                inputmode="decimal"
-                class="currency-input"
-                value="40,000"
-              />
-            </div>
-            <label class="inline-checkbox">
-              <input id="ssCola" type="checkbox" />
-              COLA with inflation
-            </label>
-          </div>
-        </div>
-        <div class="small">
-          Check the box to include Social Security in the plan. Payments are treated as after-tax income and inflate if COLA is checked.
-      </div>
-
-      <div class="section-title" style="margin-top:1.25rem;">Goal Planner</div>
+        <div class="section-title" style="margin-top:1.25rem;">Goal Planner</div>
       <div id="goalList" class="goal-list"></div>
       <div class="button-row">
         <button type="button" class="secondary" id="addGoalBtn">➕ Add goal</button>
@@ -490,13 +458,70 @@
               <th>Age</th>
               <th>Balance</th>
               <th>Income Need</th>
-              <th>Other Income</th>
-              <th>Net Need</th>
               <th>Coverage?</th>
             </tr>
           </thead>
           <tbody id="stressTableBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-tab="simulations">
+    <div class="card">
+      <div class="section-title">All Simulations</div>
+      <p style="font-size:0.9rem; color:#4b5563; margin-bottom:0.5rem;">
+        Each bubble represents a single Monte Carlo run. Click a bubble to see its detailed balance and withdrawal path.
+      </p>
+
+      <div style="margin-top:1.25rem; margin-bottom:1.25rem;">
+        <div class="section-title">
+          Balance by year
+          <span class="badge">Boxplots • all simulations</span>
+        </div>
+        <canvas id="balanceBoxplotChart"></canvas>
+        <div class="small" id="balanceBoxplotNote" style="margin-top:0.5rem; color:#6b7280;">
+          Start-of-year portfolio balance distribution across Monte Carlo runs.
+        </div>
+      </div>
+      <div style="font-size:0.8rem; color:#6b7280; margin-bottom:1rem; display:flex; flex-direction:column; gap:0.4rem;">
+        <div style="display:flex; align-items:center;">
+          <span style="display:inline-block; width:10px; height:10px; background:#10b981; border-radius:50%; margin-right:8px; flex-shrink:0;"></span>
+          <span><strong>Green:</strong> 100% of your desired income was met every single year.</span>
+        </div>
+        <div style="display:flex; align-items:center;">
+          <span style="display:inline-block; width:10px; height:10px; background:#f59e0b; border-radius:50%; margin-right:8px; flex-shrink:0;"></span>
+          <span><strong>Orange:</strong> At least one year had a shortfall, but you still met at least 50% of your income needs in the worst year.</span>
+        </div>
+        <div style="display:flex; align-items:center;">
+          <span style="display:inline-block; width:10px; height:10px; background:#ef4444; border-radius:50%; margin-right:8px; flex-shrink:0;"></span>
+          <span><strong>Red:</strong> At least one year had a severe shortfall (less than 50% of your income need met) or the portfolio was completely exhausted.</span>
+        </div>
+      </div>
+      <div class="small" style="margin-top:-0.25rem; margin-bottom:1rem; color:#6b7280;">
+        Tip: hover a bubble to see its <strong>Min Coverage</strong> (%) and <strong>Shortfall Years</strong>.
+      </div>
+      
+      <div class="sim-controls" style="margin-bottom:1rem; display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+        <div class="field" style="margin-bottom:0;">
+          <label for="simSort">Sort by:</label>
+          <select id="simSort">
+            <option value="minCoverageRatio">Severity (High to Low Coverage)</option>
+          </select>
+        </div>
+        <div id="simPagination" class="pagination">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div id="simBubbleContainer" class="bubble-container">
+        <!-- Populated by JS -->
+      </div>
+
+      <div id="selectedSimDetail" style="margin-top:2rem; display:none;">
+        <div class="section-title" id="selectedSimTitle">Selected Simulation Details</div>
+        <canvas id="selectedSimChart"></canvas>
+        <div class="small" id="selectedSimNote" style="margin-top:0.5rem;"></div>
       </div>
     </div>
   </div>

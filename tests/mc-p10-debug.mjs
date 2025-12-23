@@ -16,7 +16,6 @@ const params = {
   postRetReturn: 0.10,
   taxRate: 0.25,
   afterTaxFactor: 0.75,
-  incomeStreams: [],
   goalEvents: [],
   spendingStrategy: "fixed",
   inflationMode: "historical",
