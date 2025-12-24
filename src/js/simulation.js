@@ -21,6 +21,68 @@ import { clamp, percentile } from "./utils.js";
 
 const DEFAULT_MIN_INCOME_COVERAGE = 1;
 
+function normalizeContribSchedule(params) {
+  const schedule = Array.isArray(params?.contribSchedule) ? params.contribSchedule : null;
+  if (schedule && schedule.length) {
+    return schedule
+      .map(r => ({
+        startAge: Number(r?.startAge),
+        stopAge: Number(r?.stopAge),
+        amount: Number(r?.amount)
+      }))
+      .filter(r => Number.isFinite(r.startAge) && Number.isFinite(r.stopAge) && Number.isFinite(r.amount))
+      .filter(r => r.stopAge > r.startAge)
+      .map(r => ({
+        startAge: r.startAge,
+        stopAge: r.stopAge,
+        amount: Math.max(0, r.amount)
+      }));
+  }
+  // Backward-compatible fallback: a single flat annual contribution until retirement
+  const annual = Number(params?.annualContrib);
+  const currentAge = Number(params?.currentAge);
+  const retireAge = Number(params?.retireAge);
+  if (Number.isFinite(annual) && Number.isFinite(currentAge) && Number.isFinite(retireAge) && retireAge > currentAge) {
+    return [{ startAge: currentAge, stopAge: retireAge, amount: Math.max(0, annual) }];
+  }
+  return [];
+}
+
+function annualContributionForAge(age, params) {
+  const a = Number(age);
+  const retireAge = Number(params?.retireAge);
+  if (!Number.isFinite(a) || !Number.isFinite(retireAge) || a >= retireAge) return 0;
+  const schedule = normalizeContribSchedule(params);
+  if (!schedule.length) return 0;
+  let sum = 0;
+  for (const r of schedule) {
+    // Convention: start <= age < stop
+    const start = Number(r.startAge);
+    const stop = Math.min(Number(r.stopAge), retireAge);
+    const amt = Number(r.amount);
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || !Number.isFinite(amt)) continue;
+    if (a >= start && a < stop) sum += amt;
+  }
+  return Math.max(0, sum);
+}
+
+function withExtraAnnualSavings(params, extraAnnual) {
+  const extra = Math.max(0, Number(extraAnnual) || 0);
+  const schedule = Array.isArray(params?.contribSchedule) ? params.contribSchedule : null;
+  if (schedule && schedule.length) {
+    const normalized = normalizeContribSchedule(params);
+    const anyPositive = normalized.some(r => Number(r.amount) > 0);
+    const bumped = normalized.map(r => {
+      const base = Number(r.amount) || 0;
+      const shouldBump = anyPositive ? base > 0 : true;
+      return { ...r, amount: Math.max(0, base + (shouldBump ? extra : 0)) };
+    });
+    return { ...params, contribSchedule: bumped };
+  }
+  const baseAnnual = Number(params?.annualContrib) || 0;
+  return { ...params, annualContrib: Math.max(0, baseAnnual + extra) };
+}
+
 function buildSavingsSuggestionConfig(mcConfig) {
   if (!mcConfig) return null;
   const baseSims = Number(mcConfig.numSims) || 0;
@@ -35,8 +97,7 @@ function buildSavingsSuggestionConfig(mcConfig) {
 function estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, target = SAVINGS_TARGET_SUCCESS) {
   if (!params || !mcConfig || !baseMcResult) return null;
   const baseSuccess = baseMcResult.successProb;
-  const baseAnnual = params.annualContrib;
-  if (!Number.isFinite(baseSuccess) || !Number.isFinite(baseAnnual)) return null;
+  if (!Number.isFinite(baseSuccess)) return null;
   if (baseSuccess >= target) {
     return {
       extraAnnual: 0,
@@ -53,7 +114,7 @@ function estimateAdditionalAnnualSavings(params, mcConfig, baseMcResult, target 
     const safeExtra = Math.max(0, extra);
     const key = safeExtra.toFixed(2);
     if (cache.has(key)) return cache.get(key);
-    const trialParams = { ...params, annualContrib: Math.max(0, baseAnnual + safeExtra) };
+    const trialParams = withExtraAnnualSavings(params, safeExtra);
     const trialResult = runMonteCarlo(trialParams, suggestionConfig);
     cache.set(key, trialResult.successProb);
     return trialResult.successProb;
@@ -505,7 +566,7 @@ function simulateDeterministic(params, opts = {}) {
     if (isWorking) {
       incomeNeeded.push(0);
       incomeBenchmarks.push(0);
-      balance += params.annualContrib;
+      balance += annualContributionForAge(age, params);
       balance = applyGrowthToBalance(balance, pickReturn(age, preRetReturn));
     } else {
       const portfolioValue = balance;
@@ -621,7 +682,7 @@ function simulateOneMCPath(params, mcConfig, historicalSequencerFactory, minInco
     let totalWithdrawal = actualGoalWithdrawal;
 
     if (age < params.retireAge) {
-      balance += params.annualContrib;
+      balance += annualContributionForAge(age, params);
       balance = applyGrowthToBalance(balance, r);
       // Apply bond returns during accumulation
       if (bondTentingEnabled) {

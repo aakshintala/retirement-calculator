@@ -36,6 +36,8 @@ const downloadCsvBtn = document.getElementById("downloadCsvBtn");
 const bondTentingToggle = document.getElementById("bondTentingEnabled");
 const goalListEl = document.getElementById("goalList");
 const addGoalBtn = document.getElementById("addGoalBtn");
+const contribScheduleListEl = document.getElementById("contribScheduleList");
+const addContribRangeBtn = document.getElementById("addContribRangeBtn");
 const stressResultsEl = document.getElementById("stressResults");
 const stressTableWrap = document.getElementById("stressTableWrap");
 const stressTableBody = document.getElementById("stressTableBody");
@@ -554,12 +556,47 @@ function gatherGoalEvents() {
     .filter(goal => goal.label && Number.isFinite(goal.age) && Number.isFinite(goal.amount) && goal.amount > 0);
 }
 
+function gatherContribScheduleEvents() {
+  const currentAge = parseFloat(document.getElementById("currentAge").value);
+  const retireAge = parseFloat(document.getElementById("retireAge").value);
+  const raw = readContribScheduleRowsRaw();
+  const ranges = (raw || [])
+    .map(r => ({
+      startAge: parseFloat(r.startAge),
+      stopAge: parseFloat(r.stopAge),
+      amount: parseCurrencyValue(r.amount)
+    }))
+    .filter(r => Number.isFinite(r.startAge) && Number.isFinite(r.stopAge) && Number.isFinite(r.amount))
+    .filter(r => r.stopAge > r.startAge)
+    .map(r => ({
+      startAge: Math.max(0, Math.min(110, r.startAge)),
+      stopAge: Math.max(0, Math.min(110, r.stopAge)),
+      amount: Math.max(0, r.amount)
+    }));
+
+  if (!ranges.length && Number.isFinite(currentAge) && Number.isFinite(retireAge) && retireAge > currentAge) {
+    return [{ startAge: currentAge, stopAge: retireAge, amount: 0 }];
+  }
+  return ranges;
+}
+
 function gatherParams() {
   const currentAge = parseFloat(document.getElementById("currentAge").value);
   const retireAge = parseFloat(document.getElementById("retireAge").value);
   const endAge = parseFloat(document.getElementById("endAge").value);
   const currentSavings = readCurrencyInput("currentSavings");
-  const annualContrib = readCurrencyInput("annualContrib");
+  const contribSchedule = gatherContribScheduleEvents();
+  // Backward-compatible aggregate for the current age (used by some helpers)
+  const annualContrib = (contribSchedule || []).reduce((sum, r) => {
+    if (!r) return sum;
+    const start = Number(r.startAge);
+    const stop = Number(r.stopAge);
+    const amt = Number(r.amount);
+    if (!Number.isFinite(start) || !Number.isFinite(stop) || !Number.isFinite(amt)) return sum;
+    // Convention: start <= age < stop
+    if (currentAge >= start && currentAge < stop) return sum + amt;
+    return sum;
+  }, 0);
   const incomeNeed = readCurrencyInput("incomeNeed");
   const incomeNeedMode = incomeNeedModeSelect?.value || "portfolio_pct";
   const incomeNeedPct = clamp(parseFloat(incomeNeedPctInput?.value) / 100, 0, 0.2) || 0;
@@ -589,6 +626,7 @@ function gatherParams() {
     endAge,
     currentSavings,
     annualContrib,
+    contribSchedule,
     incomeNeed,
     incomeNeedMode,
     incomeNeedPct,
@@ -1704,6 +1742,9 @@ function captureInputsSnapshot() {
   if (goalListEl) {
     snapshot.__goals = { type: "json", value: readGoalRowsRaw() };
   }
+  if (contribScheduleListEl) {
+    snapshot.__contribSchedule = { type: "json", value: readContribScheduleRowsRaw() };
+  }
   return snapshot;
 }
 
@@ -1711,9 +1752,16 @@ function applySnapshot(snapshot) {
   if (goalListEl && !("__goals" in snapshot)) {
     setGoalRows([]);
   }
+  if (contribScheduleListEl && !("__contribSchedule" in snapshot)) {
+    setContribScheduleRows([]);
+  }
   Object.entries(snapshot).forEach(([id, info]) => {
     if (id === "__goals" && info.type === "json") {
       setGoalRows(info.value || []);
+      return;
+    }
+    if (id === "__contribSchedule" && info.type === "json") {
+      setContribScheduleRows(info.value || []);
       return;
     }
     const el = document.getElementById(id);
@@ -2081,6 +2129,82 @@ function wireAllCurrencyInputs() {
   document.querySelectorAll(".currency-input").forEach(setupCurrencyInput);
 }
 
+function getAgeInputValue(id, fallback = null) {
+  const el = document.getElementById(id);
+  const v = el ? parseFloat(el.value) : NaN;
+  return Number.isFinite(v) ? v : fallback;
+}
+
+function createContribScheduleRow(data = {}) {
+  if (!contribScheduleListEl) return;
+  const row = document.createElement("div");
+  row.className = "contrib-row";
+
+  const startInput = document.createElement("input");
+  startInput.type = "number";
+  startInput.min = "0";
+  startInput.max = "110";
+  startInput.placeholder = "Start age";
+  startInput.className = "contrib-start";
+  startInput.value = data.startAge ?? "";
+
+  const stopInput = document.createElement("input");
+  stopInput.type = "number";
+  stopInput.min = "0";
+  stopInput.max = "110";
+  stopInput.placeholder = "Stop age";
+  stopInput.className = "contrib-stop";
+  stopInput.value = data.stopAge ?? "";
+
+  const amountWrap = document.createElement("div");
+  amountWrap.className = "inline-unit";
+  const amountPrefix = document.createElement("span");
+  amountPrefix.textContent = "$";
+  const amountInput = document.createElement("input");
+  amountInput.type = "text";
+  amountInput.inputMode = "decimal";
+  amountInput.step = "1000";
+  amountInput.placeholder = "Per year";
+  amountInput.className = "contrib-amount currency-input";
+  amountInput.value = data.amount ?? "";
+  amountWrap.appendChild(amountPrefix);
+  amountWrap.appendChild(amountInput);
+  setupCurrencyInput(amountInput);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "secondary contrib-remove-btn";
+  removeBtn.textContent = "✕";
+
+  row.appendChild(startInput);
+  row.appendChild(stopInput);
+  row.appendChild(amountWrap);
+  row.appendChild(removeBtn);
+  contribScheduleListEl.appendChild(row);
+}
+
+function setContribScheduleRows(rows) {
+  if (!contribScheduleListEl) return;
+  contribScheduleListEl.innerHTML = "";
+  const safeRows = Array.isArray(rows) ? rows : [];
+  if (!safeRows.length) {
+    const currentAge = getAgeInputValue("currentAge", 35);
+    const retireAge = getAgeInputValue("retireAge", 55);
+    createContribScheduleRow({ startAge: currentAge, stopAge: retireAge, amount: "" });
+  } else {
+    safeRows.forEach(row => createContribScheduleRow(row));
+  }
+}
+
+function readContribScheduleRowsRaw() {
+  if (!contribScheduleListEl) return [];
+  return Array.from(contribScheduleListEl.querySelectorAll(".contrib-row")).map(row => ({
+    startAge: row.querySelector(".contrib-start")?.value ?? "",
+    stopAge: row.querySelector(".contrib-stop")?.value ?? "",
+    amount: row.querySelector(".contrib-amount")?.value ?? ""
+  }));
+}
+
 function createGoalRow(data = {}) {
   if (!goalListEl) return;
   const row = document.createElement("div");
@@ -2155,7 +2279,6 @@ function resetToDefaults() {
     retireAge: 55,
     endAge: 100,
     currentSavings: 1500000,
-    annualContrib: 300000,
     incomeNeed: 200000,
     incomeNeedBaseline: 200000,
     incomeNeedPct: 5.0,
@@ -2182,6 +2305,7 @@ function resetToDefaults() {
   updateMCNormalFieldsVisibility();
   updateBondTentingFields();
   updateIncomeNeedModeVisibility();
+  setContribScheduleRows([{ startAge: 35, stopAge: 55, amount: 300000 }]);
   setGoalRows([]);
   // Reformat currency inputs after setting values
   wireAllCurrencyInputs();
@@ -2246,6 +2370,36 @@ if (goalListEl) {
 }
 if (addGoalBtn) {
   addGoalBtn.addEventListener("click", () => createGoalRow());
+}
+
+if (contribScheduleListEl) {
+  contribScheduleListEl.addEventListener("click", event => {
+    const btn = event.target.closest(".contrib-remove-btn");
+    if (btn) {
+      const row = btn.closest(".contrib-row");
+      row?.remove();
+      if (!contribScheduleListEl.querySelector(".contrib-row")) {
+        setContribScheduleRows([]);
+      }
+    }
+  });
+}
+if (addContribRangeBtn) {
+  addContribRangeBtn.addEventListener("click", () => {
+    const currentAge = getAgeInputValue("currentAge", 0);
+    const retireAge = getAgeInputValue("retireAge", 0);
+    const rows = readContribScheduleRowsRaw();
+    const last = Array.isArray(rows) && rows.length ? rows[rows.length - 1] : null;
+    const prevStop = last ? parseFloat(last.stopAge) : NaN;
+    const startAge = Number.isFinite(prevStop) ? prevStop : currentAge;
+    const stopAge = Number.isFinite(retireAge) ? retireAge : startAge;
+    const prevAmt = last ? parseCurrencyValue(last.amount) : 0;
+    createContribScheduleRow({
+      startAge,
+      stopAge,
+      amount: Number.isFinite(prevAmt) ? prevAmt : ""
+    });
+  });
 }
 
 const simSortSelect = document.getElementById("simSort");

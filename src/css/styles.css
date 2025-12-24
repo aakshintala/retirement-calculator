@@ -55,6 +55,7 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(0, 1.1fr);
   gap: 1.75rem;
+  align-items: start;
 }
 .side-stack {
   display: flex;
@@ -295,9 +296,6 @@ textarea {
   white-space: nowrap;
   margin-top: 0;
 }
-#annualContrib {
-  width: min(440px, 100%);
-}
 .button-row {
   margin-top: 0.75rem;
   display: flex;
@@ -488,13 +486,44 @@ tbody tr:nth-child(odd) {
   flex-direction: column;
   gap: 0.75rem;
 }
+.contrib-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
 .goal-row {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) repeat(2, minmax(0, 1fr)) auto;
   gap: 0.5rem;
   align-items: center;
 }
+.contrib-row {
+  display: grid;
+  grid-template-columns: 90px 90px minmax(180px, 320px) 44px;
+  gap: 1rem;
+  align-items: center;
+}
+.contrib-row input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.contrib-row .inline-unit {
+  width: 100%;
+  max-width: 320px;
+  justify-self: start;
+  gap: 0.35rem;
+}
+.contrib-row .contrib-start,
+.contrib-row .contrib-stop {
+  min-width: 0;
+}
 .goal-row button {
+  background: #fee2e2;
+  color: #b91c1c;
+  box-shadow: none;
+  padding: 0.3rem 0.6rem;
+}
+.contrib-row button {
   background: #fee2e2;
   color: #b91c1c;
   box-shadow: none;
@@ -508,6 +537,13 @@ tbody tr:nth-child(odd) {
     grid-template-columns: minmax(0, 1fr);
   }
   .goal-row button {
+    width: fit-content;
+    justify-self: flex-start;
+  }
+  .contrib-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contrib-row button {
     width: fit-content;
     justify-self: flex-start;
   }

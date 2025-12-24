@@ -63,7 +63,7 @@
             </label>
           <input id="endAge" type="number" value="100" min="60" max="110" />
         </div>
-        <div class="field">
+        <div class="field full-span">
             <label for="currentSavings">
               Current savings
               <span
@@ -84,25 +84,22 @@
             />
           </div>
         </div>
-        <div class="field">
-            <label for="annualContrib">
-              Annual contribution (till retirement)
+        <div class="field full-span">
+            <label>
+              Annual contribution schedule
               <span
                 class="help-icon"
                 tabindex="0"
-                aria-label="Amount you expect to contribute each year until retirement"
-                data-tooltip="Amount you expect to contribute each year until retirement"
+                aria-label="Define one or more contribution ranges by age with a yearly amount"
+                data-tooltip="Define one or more contribution ranges by age with a yearly amount"
               >?</span>
             </label>
-          <div class="inline-unit">
-            <span>$</span>
-            <input
-              id="annualContrib"
-              type="text"
-              inputmode="decimal"
-              class="currency-input"
-              value="300,000"
-            />
+          <div id="contribScheduleList" class="contrib-list"></div>
+          <div class="button-row" style="margin-top:0.5rem;">
+            <button type="button" class="secondary" id="addContribRangeBtn">➕ Add range</button>
+          </div>
+          <div class="small">
+            Each row applies a yearly contribution for ages <strong>start ≤ age &lt; stop</strong>. New rows default to the previous stop → retirement age.
           </div>
         </div>
         <div class="field full-span" id="incomeNeedField">
@@ -155,125 +152,6 @@
           portfolio value to avoid overspending in strong market years.
         </div>
         </div>
-        <div class="field">
-            <label for="inflationPreset">
-              Inflation assumption
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Expected long-run inflation rate used to grow future withdrawals"
-                data-tooltip="Expected long-run inflation rate used to grow future withdrawals"
-              >?</span>
-            </label>
-          <select id="inflationPreset"></select>
-        </div>
-        <div class="field" id="inflationManualField">
-            <label for="inflation">
-              Manual inflation
-            </label>
-          <div class="inline-unit">
-            <input id="inflation" type="number" value="3" step="0.1" />
-            <span>% / yr</span>
-          </div>
-        </div>
-        <div class="small" id="inflationSelectionNote">
-          Choose a preset or pick Manual to enter your own inflation assumption.
-        </div>
-        <div class="field">
-            <label for="taxRate">
-              Effective tax on withdrawals
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Effective tax percentage applied to withdrawals"
-                data-tooltip="Effective tax percentage applied to withdrawals"
-              >?</span>
-            </label>
-          <div class="inline-unit">
-            <input id="taxRate" type="number" value="18" step="1" />
-            <span>%</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="section-title" style="margin-top:1.25rem;">Monte Carlo Settings</div>
-      <div class="form-grid">
-        <div class="field">
-            <label for="numSims">
-              Number of simulations
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="How many Monte Carlo runs to simulate (higher = smoother but slower)"
-                data-tooltip="How many Monte Carlo runs to simulate (higher = smoother but slower)"
-              >?</span>
-            </label>
-          <input id="numSims" type="number" value="1000" min="100" max="20000" step="100" />
-        </div>
-        <div class="field">
-            <label for="mcMode">
-              Return source
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Choose between historical regime-based Markov model or a normal distribution"
-                data-tooltip="Choose between historical regime-based Markov model or a normal distribution"
-              >?</span>
-            </label>
-          <select id="mcMode">
-              <option value="historical_regime_markov_1980">SPY 1980–2024 Markov</option>
-              <option value="historical_regime_markov">SPY 1928–2025 Markov</option>
-            <option value="normal">Normal dist (mean &amp; stdev)</option>
-          </select>
-        </div>
-        <div class="field">
-            <label for="inflationMode">
-              Inflation source (MC only)
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
-                data-tooltip="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
-              >?</span>
-            </label>
-          <select id="inflationMode">
-              <option value="fixed">Use fixed inflation assumption</option>
-            <option value="historical" selected>Historical CPI (paired with returns)</option>
-          </select>
-        </div>
-          <div class="field mc-normal-field">
-            <label for="mcMean">
-              MC mean (if normal)
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Average annual return used when normal distribution mode is selected"
-                data-tooltip="Average annual return used when normal distribution mode is selected"
-              >?</span>
-            </label>
-          <div class="inline-unit">
-            <input id="mcMean" type="number" value="9" step="0.1" />
-            <span>%</span>
-          </div>
-        </div>
-          <div class="field mc-normal-field">
-            <label for="mcStdev">
-              MC stdev (if normal)
-              <span
-                class="help-icon"
-                tabindex="0"
-                aria-label="Annual volatility (standard deviation) used in normal mode"
-                data-tooltip="Annual volatility (standard deviation) used in normal mode"
-              >?</span>
-            </label>
-          <div class="inline-unit">
-            <input id="mcStdev" type="number" value="15" step="0.1" />
-            <span>%</span>
-          </div>
-        </div>
-      </div>
-      <div class="small">
-          The regime-based Markov model uses historical SPY returns classified into three market regimes based on real returns: bear (≤−5%), flat (−5% to +5%), and bull (≥+5%). It simulates realistic market sequences by modeling regime transitions with a Markov chain—starting from the most recent regime, it probabilistically transitions between regimes based on historical patterns, then samples actual historical years from the selected regime. This preserves realistic bear/bull/flat sequences while allowing combinations not seen exactly in history. The 1980–2024 mode focuses on the modern era with generally lower inflation and different market dynamics.
       </div>
 
       <div class="section-title" style="margin-top:1.25rem;">Bond Tenting Strategy</div>
@@ -307,24 +185,133 @@
       <div class="small">
         Each goal withdraws a lump sum (today’s dollars) at the chosen age, inflated using your inflation assumption.
       </div>
-
-      <div class="button-row">
-        <button id="runBtn">▶ Run Projection & Monte Carlo</button>
-        <button class="secondary" id="resetBtn">Reset to defaults</button>
-        <span class="pill">Self-contained • No external APIs</span>
-      </div>
     </div>
 
     <!-- Right: Summary + Scenarios -->
     <div class="side-stack">
       <div class="card">
-        <div class="section-title">Results Summary</div>
-        <ul class="summary-list" id="summaryList">
-          <!-- Filled by JS -->
-        </ul>
-        <div class="small" id="summaryNote"></div>
-        <div class="small" id="savingsSuggestionNote">
-          Run the projection once to see how much extra annual savings would target a high success probability.
+        <div class="section-title">Monte Carlo Settings</div>
+        <div class="form-grid">
+          <div class="field">
+              <label for="numSims">
+                Number of simulations
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="How many Monte Carlo runs to simulate (higher = smoother but slower)"
+                  data-tooltip="How many Monte Carlo runs to simulate (higher = smoother but slower)"
+                >?</span>
+              </label>
+            <input id="numSims" type="number" value="1000" min="100" max="20000" step="100" />
+          </div>
+          <div class="field">
+              <label for="mcMode">
+                Return source
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Choose between historical regime-based Markov model or a normal distribution"
+                  data-tooltip="Choose between historical regime-based Markov model or a normal distribution"
+                >?</span>
+              </label>
+            <select id="mcMode">
+                <option value="historical_regime_markov_1980">SPY 1980–2024 Markov</option>
+                <option value="historical_regime_markov">SPY 1928–2025 Markov</option>
+              <option value="normal">Normal dist (mean &amp; stdev)</option>
+            </select>
+          </div>
+          <div class="field">
+              <label for="inflationMode">
+                Inflation source (MC only)
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
+                  data-tooltip="Choose whether Monte Carlo uses your fixed inflation assumption or the historical CPI data associated with each return path"
+                >?</span>
+              </label>
+            <select id="inflationMode">
+                <option value="fixed">Use fixed inflation assumption</option>
+              <option value="historical" selected>Historical CPI (paired with returns)</option>
+            </select>
+          </div>
+            <div class="field mc-normal-field">
+              <label for="mcMean">
+                MC mean (if normal)
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Average annual return used when normal distribution mode is selected"
+                  data-tooltip="Average annual return used when normal distribution mode is selected"
+                >?</span>
+              </label>
+            <div class="inline-unit">
+              <input id="mcMean" type="number" value="9" step="0.1" />
+              <span>%</span>
+            </div>
+          </div>
+            <div class="field mc-normal-field">
+              <label for="mcStdev">
+                MC stdev (if normal)
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Annual volatility (standard deviation) used in normal mode"
+                  data-tooltip="Annual volatility (standard deviation) used in normal mode"
+                >?</span>
+              </label>
+            <div class="inline-unit">
+              <input id="mcStdev" type="number" value="15" step="0.1" />
+              <span>%</span>
+            </div>
+          </div>
+          <div class="field">
+              <label for="inflationPreset">
+                Inflation assumption
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Expected long-run inflation rate used to grow future withdrawals"
+                  data-tooltip="Expected long-run inflation rate used to grow future withdrawals"
+                >?</span>
+              </label>
+            <select id="inflationPreset"></select>
+          </div>
+          <div class="field" id="inflationManualField">
+              <label for="inflation">
+                Manual inflation
+              </label>
+            <div class="inline-unit">
+              <input id="inflation" type="number" value="3" step="0.1" />
+              <span>% / yr</span>
+            </div>
+          </div>
+          <div class="small full-span" id="inflationSelectionNote">
+            Choose a preset or pick Manual to enter your own inflation assumption.
+          </div>
+          <div class="field">
+              <label for="taxRate">
+                Effective tax on withdrawals
+                <span
+                  class="help-icon"
+                  tabindex="0"
+                  aria-label="Effective tax percentage applied to withdrawals"
+                  data-tooltip="Effective tax percentage applied to withdrawals"
+                >?</span>
+              </label>
+            <div class="inline-unit">
+              <input id="taxRate" type="number" value="18" step="1" />
+              <span>%</span>
+            </div>
+          </div>
+        </div>
+        <div class="small" style="margin-top:0.6rem;">
+            The regime-based Markov model uses historical SPY returns classified into three market regimes based on real returns: bear (≤−5%), flat (−5% to +5%), and bull (≥+5%). It simulates realistic market sequences by modeling regime transitions with a Markov chain—starting from the most recent regime, it probabilistically transitions between regimes based on historical patterns, then samples actual historical years from the selected regime. This preserves realistic bear/bull/flat sequences while allowing combinations not seen exactly in history. The 1980–2024 mode focuses on the modern era with generally lower inflation and different market dynamics.
+        </div>
+        <div class="button-row" style="margin-top:0.9rem;">
+          <button id="runBtn">▶ Run Projection &amp; Monte Carlo</button>
+          <button class="secondary" id="resetBtn">Reset to defaults</button>
+          <span class="pill">Self-contained • No external APIs</span>
         </div>
       </div>
 
@@ -348,6 +335,17 @@
           Scenarios store every input on this page in your browser’s local storage. Great for baseline vs. stretch vs. conservative comparisons.
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem;">
+    <div class="section-title">Results Summary</div>
+    <ul class="summary-list" id="summaryList">
+      <!-- Filled by JS -->
+    </ul>
+    <div class="small" id="summaryNote"></div>
+    <div class="small" id="savingsSuggestionNote">
+      Run the projection once to see how much extra annual savings would target a high success probability.
     </div>
   </div>
 

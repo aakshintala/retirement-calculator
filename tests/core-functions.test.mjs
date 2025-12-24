@@ -108,6 +108,28 @@ describe("simulateDeterministic coverage", () => {
     assert.equal(result.coverageFlags.every(Boolean), true);
   });
 
+  test("uses contribSchedule ranges (start <= age < stop)", () => {
+    const params = baseParams({
+      retireAge: 62,
+      endAge: 62,
+      annualContrib: 999999, // should be ignored when contribSchedule is present
+      contribSchedule: [
+        { startAge: 60, stopAge: 61, amount: 1000 },
+        { startAge: 61, stopAge: 62, amount: 2000 }
+      ],
+      preRetReturn: 0,
+      postRetReturn: 0,
+      incomeNeed: 0,
+      goalEvents: []
+    });
+    const result = simulateDeterministic(params);
+    assert.deepEqual(result.years, [60, 61, 62]);
+    // Year 60: 100000 + 1000 => 101000 end, so age 61 starts at 101000
+    assert.equal(result.balances[1], 101000);
+    // Year 61: +2000 => 103000 end, so age 62 starts at 103000 (retired, no contrib)
+    assert.equal(result.balances[2], 103000);
+  });
+
   test("goal withdrawals inflate correctly", () => {
     const params = baseParams({
       retireAge: 60,
